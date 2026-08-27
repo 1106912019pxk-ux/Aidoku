@@ -27,7 +27,7 @@
 - [ ] 迁移宿主适配、阅读器增强、自动阅读、TTS、TXT 和字体解析。
 - [ ] 完成静态检查、单元测试和至少一次无签名 archive。
 - [ ] 在 iPhone 17 和 iPad Air 4 上完成一次集中高风险回归。
-- [ ] 创建新的公开 GitHub 仓库，配置 origin，并在授权后推送。
+- [x] 创建新的公开 GitHub fork，配置 origin，并推送当前集成分支。
 
 ## 当前阶段不做
 
@@ -47,9 +47,10 @@
 - 2026-08-28：确认公开项目；主要设备为 iPhone 17（iOS 26）和 iPad Air 4。
 - upstream/main、main 和当前工作分支均起于 ae20b10e。
 - legacy/main 为 df996442；legacy 最终功能分支为 b0baed46；共同祖先为 45fe8231。
-- 两个远端 fetch 均成功；已授权在本轮创建公开 fork、配置 origin 并推送当前集成分支。
+- 公开 fork `1106912019pxk-ux/Aidoku` 已创建；origin 已配置；集成分支提交 `9a93b111` 已推送并与远端一致。
+- 新 fork 的 Actions 权限为 enabled，但 workflow 注册列表为空；本轮没有运行 Actions。
 - 尚未验证：SwiftLint、XCTest、Xcode archive、IPA 和真机行为。
 
 ## 下一步
 
-生成旧功能矩阵，从与上游重叠最大的阅读器和本地来源模块开始代码级迁移审计。
+从与上游重叠最大的条漫自动滚动、Reader、SourceManager 和本地来源模块开始代码级替代审计。

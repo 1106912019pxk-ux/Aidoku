@@ -11,7 +11,7 @@
 | 旧最终功能点 | `legacy/feature/txt-local-reader-20260825` = `b0baed469ccd405cf950d99b3ff0a521ad803142` | 功能迁移的主要历史证据 |
 | 共同祖先 | `45fe8231a8da58f70f5f2e152a039fcb49eab4cb` | 分析上游变化和旧个人差异的起点 |
 
-`upstream` 和 `legacy` 的 push URL 已设为 `DISABLED`。新的公开个人仓库尚未创建，因此当前没有 `origin`。
+`origin` 已指向公开 fork `https://github.com/1106912019pxk-ux/Aidoku.git`；`upstream` 和 `legacy` 的 push URL 继续保持 `DISABLED`。
 
 ## 技术栈
 
@@ -75,14 +75,14 @@ fetch upstream -> 对比上次同步点 -> 按主题解释变化和重叠
 | 运行测试 | `xcodebuild -project Aidoku.xcodeproj -scheme Aidoku -destination '<可用 iOS Simulator>' test` | scheme 包含 `AidokuTests`；具体 destination 待 CI 验证 |
 | SwiftLint | `swiftlint lint --reporter github-actions-logging` | 官方 PR 工作流使用；本机未安装 SwiftLint |
 | 无签名 archive | `xcodebuild -scheme "Aidoku" -configuration Release archive -archivePath build/Aidoku.xcarchive -skipPackagePluginValidation CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO` | 官方工作流命令；Windows 未执行 |
-| IPA 打包 | GitHub Actions `Build and upload nightly ipa` 手动触发 | 本地已改为仅 `workflow_dispatch`，尚未运行 |
+| IPA 打包 | GitHub Actions `Build and upload nightly ipa` 手动触发 | 集成分支已改为仅 `workflow_dispatch`；新 fork 尚未注册任何 workflow，未运行 |
 
 ## 数据和外部服务
 
 - 持久化数据：Core Data、应用设置、下载缓存和本地导入文件。迁移功能时不得改变现有数据库含义或静默丢失进度。
 - 登录和权限：不同来源、追踪服务和侧载签名可能有独立凭据；真实值不得进入 Git。
 - 外部服务：GitHub 用于公开源码、代码检查和 macOS 构建；内容来源由 Aidoku 来源机制提供。
-- GitHub 认证：当前 `gh` 登录令牌无效；创建新公开仓库或首次推送前需要重新认证。
+- GitHub 认证：`gh` keyring 登录、HTTPS 推送和 `repo` 权限已验证；公开 fork 与集成分支已创建。
 
 ## 已知架构限制
 
@@ -95,6 +95,6 @@ fetch upstream -> 对比上次同步点 -> 按主题解释变化和重叠
 ## 相关技术决定
 
 - 以当前官方 `upstream/main` 建立新基线，再按有效用户行为迁移旧功能。
-- 旧仓库只读保留；新 GitHub 仓库创建前不设置 `origin`。
+- 旧仓库只读保留；公开 fork 作为 `origin`，官方仓库继续作为只读 `upstream`。
 - `main` 用于个人稳定版本，上游同步在独立分支完成。
 - 打包工作流仅手动触发，自动检查优先，真机验收集中在高风险集成节点。
