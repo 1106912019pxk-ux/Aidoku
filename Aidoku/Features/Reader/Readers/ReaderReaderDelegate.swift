@@ -29,6 +29,21 @@ extension ReaderReaderDelegate {
     }
 }
 
+/// A reader that can be driven by the reader-level automatic scrolling control.
+/// Image readers and text readers share the control, while each implementation
+/// remains responsible for its own scroll geometry and lifecycle.
+@MainActor
+protocol ReaderAutoScrolling: AnyObject {
+    var isAutoScrolling: Bool { get }
+    var autoScrollingDidReachEnd: (() -> Void)? { get set }
+
+    func startAutoScrolling(speed: Double)
+    func updateAutoScrollingSpeed(_ speed: Double)
+    func pauseAutoScrolling()
+    func resumeAutoScrolling()
+    func stopAutoScrolling()
+}
+
 @available(iOS 18.0, *)
 protocol ReaderDictionaryReader: ReaderReaderDelegate {
     /// Returns recognized text at the given point (in the reader's view coordinates)

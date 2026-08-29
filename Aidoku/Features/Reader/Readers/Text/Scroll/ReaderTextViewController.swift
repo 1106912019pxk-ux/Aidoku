@@ -9,6 +9,18 @@ import AidokuRunner
 import SwiftUI
 import ZIPFoundation
 
+private final class ReaderTextAutoScrollDisplayLinkProxy {
+    weak var owner: ReaderTextViewController?
+
+    init(owner: ReaderTextViewController) {
+        self.owner = owner
+    }
+
+    @objc func step(_ displayLink: CADisplayLink) {
+        owner?.handleAutoScrollFrame(displayLink)
+    }
+}
+
 class ReaderTextViewController: BaseViewController {
     let viewModel: ReaderTextViewModel
 
@@ -49,6 +61,14 @@ class ReaderTextViewController: BaseViewController {
     private var lastReportedPage = 0
     private var needsPageCountUpdate = false
 
+    private let autoScrollBasePointsPerSecond: CGFloat = 56
+    private var autoScrollDisplayLink: CADisplayLink?
+    private var autoScrollDisplayLinkProxy: ReaderTextAutoScrollDisplayLinkProxy?
+    private var autoScrollLastTimestamp: CFTimeInterval = 0
+    private var autoScrollSpeed: Double = 1
+    private(set) var isAutoScrolling = false
+    var autoScrollingDidReachEnd: (() -> Void)?
+
     /// Tracks the last known safe area insets so we can compensate content offset
     /// when bars show/hide with `contentInsetAdjustmentBehavior = .never`.
     private var lastSafeAreaInsets: UIEdgeInsets?
@@ -78,7 +98,7 @@ class ReaderTextViewController: BaseViewController {
 
     private lazy var scrollView: UIScrollView = {
         let scrollView = UIScrollView()
-        scrollView.backgroundColor = .systemBackground
+        scrollView.backgroundColor = TextReaderTheme.current.backgroundColor
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.delegate = self
         scrollView.alwaysBounceVertical = true
@@ -110,13 +130,28 @@ class ReaderTextViewController: BaseViewController {
     private var currentHorizontalPadding: Double {
         UserDefaults.standard.object(forKey: "Reader.textHorizontalPadding") as? Double ?? 24
     }
+    private var currentTopPadding: Double {
+        UserDefaults.standard.object(forKey: "Reader.textTopPadding") as? Double ?? 32
+    }
+    private var currentBottomPadding: Double {
+        UserDefaults.standard.object(forKey: "Reader.textBottomPadding") as? Double ?? 32
+    }
+    private var currentParagraphSpacing: Double {
+        UserDefaults.standard.object(forKey: "Reader.textParagraphSpacing") as? Double ?? 12
+    }
+    private var currentFirstLineIndent: Double {
+        UserDefaults.standard.object(forKey: "Reader.textFirstLineIndent") as? Double ?? 0
+    }
 
     private func createHostingController(page: Page?) -> UIHostingController<ReaderTextView> {
         let hc = HostingController(
             rootView: ReaderTextView(
                 source: viewModel.source, page: page,
                 fontFamily: currentFontFamily, fontSize: currentFontSize,
-                lineSpacing: currentLineSpacing, horizontalPadding: currentHorizontalPadding
+                lineSpacing: currentLineSpacing, horizontalPadding: currentHorizontalPadding,
+                topPadding: currentTopPadding, bottomPadding: currentBottomPadding,
+                paragraphSpacing: currentParagraphSpacing, firstLineIndent: currentFirstLineIndent,
+                theme: .current
             )
         )
         if #available(iOS 16.0, *) {
@@ -149,6 +184,10 @@ class ReaderTextViewController: BaseViewController {
         super.init()
     }
 
+    deinit {
+        autoScrollDisplayLink?.invalidate()
+    }
+
     // MARK: - Helpers
 
     private var mangaId: MangaIdentifier {
@@ -175,7 +214,10 @@ class ReaderTextViewController: BaseViewController {
                 hc.rootView = ReaderTextView(
                     source: viewModel.source, page: page,
                     fontFamily: currentFontFamily, fontSize: currentFontSize,
-                    lineSpacing: currentLineSpacing, horizontalPadding: currentHorizontalPadding
+                    lineSpacing: currentLineSpacing, horizontalPadding: currentHorizontalPadding,
+                    topPadding: currentTopPadding, bottomPadding: currentBottomPadding,
+                    paragraphSpacing: currentParagraphSpacing, firstLineIndent: currentFirstLineIndent,
+                    theme: .current
                 )
                 hc.view.invalidateIntrinsicContentSize()
             }
@@ -189,7 +231,12 @@ class ReaderTextViewController: BaseViewController {
             "Reader.textFontFamily",
             "Reader.textFontSize",
             "Reader.textLineSpacing",
-            "Reader.textHorizontalPadding"
+            "Reader.textHorizontalPadding",
+            "Reader.textTopPadding",
+            "Reader.textBottomPadding",
+            "Reader.textParagraphSpacing",
+            "Reader.textFirstLineIndent",
+            "Reader.textBackgroundColor"
         ]
         for key in styleKeys {
             NotificationCenter.default.addObserver(
@@ -410,6 +457,7 @@ extension ReaderTextViewController {
     }
 
     @objc private func textStyleChanged() {
+        scrollView.backgroundColor = TextReaderTheme.current.backgroundColor
         refreshTextViews()
     }
 
@@ -519,11 +567,16 @@ extension ReaderTextViewController {
                             self.lastReportedPage = currentPage
                             self.delegate?.setCurrentPage(currentPage, position: savedProgress)
                         }
+                    } else {
+                        self.lastReportedPage = 1
+                        self.delegate?.setCurrentPage(1, position: 0)
                     }
                     self.pendingScrollRestore = false
                 }
             } else {
                 scrollView.setContentOffset(.init(x: 0, y: prevHeight - safeTop), animated: false)
+                lastReportedPage = 1
+                delegate?.setCurrentPage(1, position: 0)
             }
 
             isLoadingChapter = false
@@ -884,5 +937,152 @@ extension ReaderTextViewController: UIScrollViewDelegate {
                 appendNextChapter()
             }
         }
+    }
+}
+
+// MARK: - Auto Reading
+
+extension ReaderTextViewController: ReaderAutoScrolling {
+    func startAutoScrolling(speed: Double) {
+        autoScrollSpeed = min(8, max(0.5, speed))
+        isAutoScrolling = true
+        scrollView.isScrollEnabled = false
+        autoScrollLastTimestamp = 0
+
+        guard autoScrollDisplayLink == nil else { return }
+        let proxy = ReaderTextAutoScrollDisplayLinkProxy(owner: self)
+        let displayLink = CADisplayLink(
+            target: proxy,
+            selector: #selector(ReaderTextAutoScrollDisplayLinkProxy.step(_:))
+        )
+        displayLink.add(to: .main, forMode: .common)
+        autoScrollDisplayLinkProxy = proxy
+        autoScrollDisplayLink = displayLink
+    }
+
+    func updateAutoScrollingSpeed(_ speed: Double) {
+        autoScrollSpeed = min(8, max(0.5, speed))
+        autoScrollLastTimestamp = 0
+    }
+
+    func pauseAutoScrolling() {
+        autoScrollDisplayLink?.invalidate()
+        autoScrollDisplayLink = nil
+        autoScrollDisplayLinkProxy = nil
+        autoScrollLastTimestamp = 0
+    }
+
+    func resumeAutoScrolling() {
+        guard isAutoScrolling else { return }
+        startAutoScrolling(speed: autoScrollSpeed)
+    }
+
+    func stopAutoScrolling() {
+        isAutoScrolling = false
+        pauseAutoScrolling()
+        scrollView.isScrollEnabled = true
+    }
+
+    fileprivate func handleAutoScrollFrame(_ displayLink: CADisplayLink) {
+        guard isAutoScrolling, !isSliding, !pendingScrollRestore else {
+            autoScrollLastTimestamp = displayLink.timestamp
+            return
+        }
+        guard autoScrollLastTimestamp > 0 else {
+            autoScrollLastTimestamp = displayLink.timestamp
+            return
+        }
+
+        let elapsed = min(0.1, displayLink.timestamp - autoScrollLastTimestamp)
+        autoScrollLastTimestamp = displayLink.timestamp
+        checkInfiniteLoad()
+
+        let minimumOffset = -scrollView.adjustedContentInset.top
+        let maximumOffset = max(
+            minimumOffset,
+            scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
+        )
+        guard maximumOffset > minimumOffset else {
+            if nextChapter == nil {
+                stopAutoScrolling()
+                autoScrollingDidReachEnd?()
+            }
+            return
+        }
+
+        let distance = autoScrollBasePointsPerSecond * CGFloat(autoScrollSpeed) * CGFloat(elapsed)
+        let targetOffset = min(maximumOffset, scrollView.contentOffset.y + distance)
+        scrollView.setContentOffset(
+            CGPoint(x: scrollView.contentOffset.x, y: targetOffset),
+            animated: false
+        )
+
+        if targetOffset >= maximumOffset - 0.5, nextChapter == nil, !loadingNext {
+            stopAutoScrolling()
+            autoScrollingDidReachEnd?()
+        }
+    }
+}
+
+// MARK: - Speech text provider
+
+extension ReaderTextViewController: ReaderSpeechTextProviding {
+    func speechSegmentsFromCurrentPosition() -> [ReaderSpeechSegment] {
+        guard let sectionIndex = currentSectionIndex else { return [] }
+        let section = sections[sectionIndex]
+        let startY = sectionContentStartY(at: sectionIndex)
+        let viewportCenter = scrollView.contentOffset.y + scrollView.bounds.height / 2
+        var pageIndex = 0
+        var pageY = startY
+        for (index, hostingController) in section.hostingControllers.enumerated() {
+            let pageHeight = hostingController.view.frame.height
+            if viewportCenter < pageY + pageHeight {
+                pageIndex = index
+                break
+            }
+            pageY += pageHeight
+            pageIndex = index + 1
+        }
+
+        var result = ReaderSpeechTextExtractor.segments(
+            from: section.pages,
+            chapterKey: section.chapter.key,
+            startingAt: min(pageIndex, section.pages.count)
+        )
+        if sectionIndex + 1 < sections.count {
+            for nextSection in sections[(sectionIndex + 1)...] {
+                result.append(contentsOf: ReaderSpeechTextExtractor.segments(
+                    from: nextSection.pages,
+                    chapterKey: nextSection.chapter.key
+                ))
+            }
+        }
+        return result
+    }
+
+    func prepareSpeechSegments(for chapter: AidokuRunner.Chapter) async -> [ReaderSpeechSegment] {
+        await viewModel.preload(chapter: chapter)
+        let pages = viewModel.preloadedPages
+        return ReaderSpeechTextExtractor.segments(from: pages, chapterKey: chapter.key)
+    }
+
+    @discardableResult
+    func revealSpeechSegment(_ segment: ReaderSpeechSegment) -> Bool {
+        guard let sectionIndex = sections.firstIndex(where: { $0.chapter.key == segment.chapterKey }) else {
+            return false
+        }
+        let section = sections[sectionIndex]
+        guard section.hostingControllers.indices.contains(segment.pageIndex) else { return false }
+        let y = sectionContentStartY(at: sectionIndex)
+            + section.hostingControllers.prefix(segment.pageIndex).reduce(0) { $0 + $1.view.frame.height }
+        scrollView.setContentOffset(
+            CGPoint(x: 0, y: max(-scrollView.adjustedContentInset.top, y)),
+            animated: false
+        )
+        return true
+    }
+
+    func setSpeechNavigationLocked(_ locked: Bool) {
+        scrollView.isScrollEnabled = !locked
     }
 }

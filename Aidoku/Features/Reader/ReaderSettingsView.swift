@@ -7,10 +7,69 @@
 
 import SwiftUI
 
+private struct ReaderAutoReadingSettingView: View {
+    @AppStorage("Reader.autoScrollSpeed") private var speed = 1.0
+    let onStart: (Double) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        HStack {
+            Text(textReaderLocalized("AUTO_READING_SPEED", fallback: "Auto Reading Speed"))
+            Spacer()
+            Button {
+                changeSpeed(direction: -1)
+            } label: {
+                Image(systemName: "minus").frame(width: 32, height: 32)
+            }
+            .buttonStyle(.borderless)
+            .disabled(speed <= 0.5)
+
+            Text(String(format: "%.2f×", speed))
+                .monospacedDigit()
+                .frame(minWidth: 54)
+
+            Button {
+                changeSpeed(direction: 1)
+            } label: {
+                Image(systemName: "plus").frame(width: 32, height: 32)
+            }
+            .buttonStyle(.borderless)
+            .disabled(speed >= 8)
+        }
+
+        Button {
+            let selectedSpeed = speed
+            dismiss()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                onStart(selectedSpeed)
+            }
+        } label: {
+            Label(
+                textReaderLocalized("AUTO_READING_START", fallback: "Start Auto Reading"),
+                systemImage: "play.fill"
+            )
+        }
+    }
+
+    private func changeSpeed(direction: Double) {
+        let thresholdSpeed = direction < 0 ? speed - 0.001 : speed
+        let step: Double = if thresholdSpeed >= 4 {
+            1
+        } else if thresholdSpeed >= 2 {
+            0.5
+        } else {
+            0.25
+        }
+        speed = min(8, max(0.5, ((speed + step * direction) * 4).rounded() / 4))
+    }
+}
+
 struct ReaderSettingsView: View {
     let mangaId: MangaIdentifier
     let reader: ReaderViewController.Reader
     let chapterLanguage: String?
+    let onStartAutoReading: (Double) -> Void
 
     @State private var sourceLanguageCodes: [String] = []
     @State private var sourceLanguageTitles: [String] = []
@@ -26,20 +85,18 @@ struct ReaderSettingsView: View {
     @StateObject private var dictionaryTextOverlayModeEnabled = UserDefaultsBool(key: AppSettings.dictionary.textOverlayMode.key)
     @StateObject private var restrictOCRLanguages = UserDefaultsBool(key: AppSettings.dictionary.restrictOCRLanguages.key)
 
-    // All available font families on the system
-    private static let availableFonts: [String] = {
-        var fonts = UIFont.familyNames.sorted()
-        // Add "System" at the beginning for the default SF font
-        fonts.insert("System", at: 0)
-        return fonts
-    }()
-
     @Environment(\.dismiss) private var dismiss
 
-    init(mangaId: MangaIdentifier, reader: ReaderViewController.Reader, chapterLanguage: String?) {
+    init(
+        mangaId: MangaIdentifier,
+        reader: ReaderViewController.Reader,
+        chapterLanguage: String?,
+        onStartAutoReading: @escaping (Double) -> Void
+    ) {
         self.mangaId = mangaId
         self.reader = reader
         self.chapterLanguage = chapterLanguage
+        self.onStartAutoReading = onStartAutoReading
 
         self._readingMode = State(
             initialValue: UserDefaults.standard.string(forKey: "Reader.readingMode.\(mangaId)")
@@ -61,6 +118,10 @@ struct ReaderSettingsView: View {
         PlatformNavigationStack {
             List {
                 generalSection
+
+                Section(textReaderLocalized("AUTO_READING", fallback: "Auto Reading")) {
+                    ReaderAutoReadingSettingView(onStart: onStartAutoReading)
+                }
 
                 if #available(iOS 18.0, *), reader != .text {
                     dictionarySection
@@ -518,7 +579,7 @@ extension ReaderSettingsView {
                     key: "Reader.autoScrollSpeed",
                     title: NSLocalizedString("AUTO_SCROLL_SPEED"),
                     requires: "Reader.autoScroll",
-                    value: .stepper(.init(minimumValue: 1, maximumValue: 10, stepValue: 1))
+                    value: .stepper(.init(minimumValue: 0.5, maximumValue: 8, stepValue: 0.25))
                 )
             )
             SettingView(
@@ -576,12 +637,16 @@ extension ReaderSettingsView {
                     ))
                 )
             )
+            TextReaderFontSettingView(title: NSLocalizedString("TEXT_FONT_FAMILY"))
             SettingView(
                 setting: .init(
-                    key: "Reader.textFontFamily",
-                    title: NSLocalizedString("TEXT_FONT_FAMILY"),
-                    notification: .init("Reader.textFontFamily"),
-                    value: .select(.init(values: Self.availableFonts))
+                    key: "Reader.textBackgroundColor",
+                    title: textReaderLocalized("TEXT_BACKGROUND_COLOR", fallback: "Background Color"),
+                    notification: .init("Reader.textBackgroundColor"),
+                    value: .select(.init(
+                        values: TextReaderTheme.allCases.map(\.rawValue),
+                        titles: TextReaderTheme.allCases.map(\.title)
+                    ))
                 )
             )
             SettingView(
@@ -606,6 +671,38 @@ extension ReaderSettingsView {
                     title: NSLocalizedString("TEXT_HORIZONTAL_PADDING"),
                     notification: .init("Reader.textHorizontalPadding"),
                     value: .stepper(.init(minimumValue: 8, maximumValue: 48, stepValue: 4))
+                )
+            )
+            SettingView(
+                setting: .init(
+                    key: "Reader.textTopPadding",
+                    title: textReaderLocalized("TEXT_TOP_PADDING", fallback: "Top Padding"),
+                    notification: .init("Reader.textTopPadding"),
+                    value: .stepper(.init(minimumValue: -24, maximumValue: 80, stepValue: 2))
+                )
+            )
+            SettingView(
+                setting: .init(
+                    key: "Reader.textBottomPadding",
+                    title: textReaderLocalized("TEXT_BOTTOM_PADDING", fallback: "Bottom Padding"),
+                    notification: .init("Reader.textBottomPadding"),
+                    value: .stepper(.init(minimumValue: -24, maximumValue: 80, stepValue: 2))
+                )
+            )
+            SettingView(
+                setting: .init(
+                    key: "Reader.textParagraphSpacing",
+                    title: textReaderLocalized("TEXT_PARAGRAPH_SPACING", fallback: "Paragraph Spacing"),
+                    notification: .init("Reader.textParagraphSpacing"),
+                    value: .stepper(.init(minimumValue: 0, maximumValue: 32, stepValue: 1))
+                )
+            )
+            SettingView(
+                setting: .init(
+                    key: "Reader.textFirstLineIndent",
+                    title: textReaderLocalized("TEXT_FIRST_LINE_INDENT", fallback: "First-line Indent"),
+                    notification: .init("Reader.textFirstLineIndent"),
+                    value: .stepper(.init(minimumValue: 0, maximumValue: 4, stepValue: 1))
                 )
             )
         }

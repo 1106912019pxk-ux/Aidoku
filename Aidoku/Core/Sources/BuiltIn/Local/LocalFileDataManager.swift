@@ -150,7 +150,7 @@ extension LocalFileDataManager {
         }
     }
 
-    // get the path to the zip archive for a chapter
+    // get the path to the local file for a chapter
     func fetchChapterArchivePath(mangaId: String, chapterId: String) -> String? {
         let chapterRequest = ChapterObject.fetchRequest()
         chapterRequest.predicate = NSPredicate(

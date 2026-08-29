@@ -22,7 +22,11 @@ extension InterpreterConfiguration {
                 }
 
                 do {
-                    let (data, response) = try await URLSession.shared.data(for: request)
+                    let (data, response) = if sourceId == PicaNetworkRouting.sourceId {
+                        try await PicaNetworkRouting.data(for: request)
+                    } else {
+                        try await URLSession.shared.data(for: request)
+                    }
 
                     let httpResponse = response as? HTTPURLResponse
                     if let httpResponse {

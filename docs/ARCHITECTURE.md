@@ -6,7 +6,7 @@
 |---|---|---|
 | 官方基线 | `upstream/main` = `ae20b10e9d77c9f040a423d79081b5ad3c7b5023` | 官方 Aidoku 最新源码 |
 | 本地稳定分支 | `main`，当前与 `upstream/main` 相同 | 后续只接收已验证的个人整合版本 |
-| 当前工作分支 | `integration/project-baseline-20260828` | 建立项目文档和迁移基线 |
+| 当前工作分支 | `integration/legacy-capability-migration` | 按最终用户行为迁移旧个人功能 |
 | 旧个人稳定点 | `legacy/main` = `df9964421aa92f5bdcff5b5583c11d575b46791d` | 旧项目主分支参考 |
 | 旧最终功能点 | `legacy/feature/txt-local-reader-20260825` = `b0baed469ccd405cf950d99b3ff0a521ad803142` | 功能迁移的主要历史证据 |
 | 共同祖先 | `45fe8231a8da58f70f5f2e152a039fcb49eab4cb` | 分析上游变化和旧个人差异的起点 |
@@ -55,20 +55,24 @@
 -> 文字或图片阅读器 -> 排版/朗读/自动阅读 -> 保存阅读位置
 ```
 
-官方当前基线只提供其现有本地格式行为；TXT、个人 TTS、自动阅读和跨章节定位仍位于 `legacy/feature/txt-local-reader-20260825`，尚未迁移。
+当前迁移分支已接入文字设置、TXT 导入/索引、滚动文字自动阅读、朗读核心与可见页/跨章节 pending 定位，以及 PICA/E-Hentai 宿主适配。`ReaderSpeechTextProviding` 使用实际分页或滚动 section 生成 chapter/page 锚点；`ReaderSpeechController` 负责微软在线 WebSocket、Apple 系统降级、音频会话和媒体控制。PICA 路由从当前 Runner request handler、Nuke 和下载器入口接入，详情页收藏仍要求配套定制 AIX 实现通知协议。
 
 ### 上游同步
 
 ```text
-fetch upstream -> 对比上次同步点 -> 按主题解释变化和重叠
--> sync/upstream-YYYYMMDD -> 自动检查/必要编译 -> 集中真机回归 -> main
+fetch upstream -> 对比上次同步点 -> 按主题解释变化、用户影响和个人功能重叠
+-> 用户选择允许合入的主题
+-> sync/upstream-YYYYMMDD -> 仅处理已批准主题 -> 自动检查/必要编译 -> 集中真机回归 -> main
 ```
+
+`fetch` 和差异分析是只读调查；用户选择是实际合入的前置门槛。没有明确选择时，不 merge、rebase、cherry-pick，也不把上游文件直接覆盖到当前分支。冲突报告必须分别说明上游行为、当前个人行为、建议选择及其代价。
 
 ## 项目命令
 
 | 用途 | 实际命令或入口 | 当前验证状态 |
 |---|---|---|
-| 获取官方更新 | `git fetch upstream main` | 本机已成功执行；因本轮沙箱所有权差异需临时 safe.directory |
+| Git 所有权预检 | `pwsh -NoProfile -File scripts/check-git-ownership.ps1` | 已验证；`.git` 根目录必须与仓库根目录同属一个所有者，禁止用 `safe.directory` 掩盖当前仓库异常 |
+| 获取官方更新 | `git fetch upstream main` | 本机已成功执行；修复 `.git` 根目录所有者后不再需要 `safe.directory` |
 | 获取旧迁移参考 | `git fetch legacy` | 本机已成功执行，只配置了两个旧分支 |
 | 安装依赖 | 使用 Xcode 打开工程并解析 `Package.resolved` | Windows 无法执行，待首次 macOS CI 验证 |
 | 启动项目 | Xcode 打开 `Aidoku.xcodeproj`，共享 scheme 为 `Aidoku` | 从工程文件确认，Windows 未运行 |
@@ -87,9 +91,10 @@ fetch upstream -> 对比上次同步点 -> 按主题解释变化和重叠
 ## 已知架构限制
 
 - Windows 无 Xcode，Swift 编译、Simulator 和 IPA archive 必须在 macOS/CI 完成。
+- Codex Windows 沙箱会以 `CodexSandboxOnline`/`CodexSandboxOffline` 身份运行命令；不得让这些账号创建当前仓库的 `.git` 根目录。沙箱创建的 Git 对象子项可以有混合所有者，项目预检只保护 `.git` 根目录这一初始化边界。
 - 官方上游在共同祖先后已有 41 个提交并重组目录；旧代码不能假设原 `Shared/`、`iOS/` 路径仍存在。
 - 旧最终功能分支相对共同祖先包含 77 个提交，其中有撤销实验和 CI 噪声；迁移必须按最终行为切片。
-- 当前基线尚未包含旧项目的 TXT、字体解析、个人 TTS、自动阅读和跨章节朗读修复。
+- 当前工作分支的代码迁移范围已收敛，详细映射见 `docs/LEGACY_MIGRATION_AUDIT.md`；尚未在 macOS 上编译，所有 Swift 类型/并发结论仍需编译证据确认。
 - iPadOS 精确版本和新基线真机兼容性尚未验证。
 
 ## 相关技术决定

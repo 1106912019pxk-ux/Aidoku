@@ -9,14 +9,6 @@ import AidokuRunner
 import UIKit
 
 enum Settings {
-    // All available font families on the system
-    private static let availableFonts: [String] = {
-        var fonts = UIFont.familyNames.sorted()
-        // Add "System" at the beginning for the default SF font
-        fonts.insert("System", at: 0)
-        return fonts
-    }()
-
     private static let sourceLanguageCodes: [String] = {
         var languageCodes = if #available(iOS 16, *) {
             Locale.LanguageCode.isoLanguageCodes.map { $0.identifier }
@@ -580,7 +572,7 @@ extension Settings {
                         key: "Reader.autoScrollSpeed",
                         title: NSLocalizedString("AUTO_SCROLL_SPEED"),
                         requires: "Reader.autoScroll",
-                        value: .stepper(.init(minimumValue: 1, maximumValue: 10, stepValue: 1))
+                        value: .stepper(.init(minimumValue: 0.5, maximumValue: 8, stepValue: 0.25))
                     ),
                     .init(
                         key: "Reader.pillarbox",
@@ -627,9 +619,15 @@ extension Settings {
                     .init(
                         key: "Reader.textFontFamily",
                         title: NSLocalizedString("TEXT_FONT_FAMILY"),
-                        notification: .init("Reader.textFontFamily"),
+                        value: .custom
+                    ),
+                    .init(
+                        key: "Reader.textBackgroundColor",
+                        title: textReaderLocalized("TEXT_BACKGROUND_COLOR", fallback: "Background Color"),
+                        notification: .init("Reader.textBackgroundColor"),
                         value: .select(.init(
-                            values: Self.availableFonts
+                            values: TextReaderTheme.allCases.map(\.rawValue),
+                            titles: TextReaderTheme.allCases.map(\.title)
                         ))
                     ),
                     .init(
@@ -649,6 +647,30 @@ extension Settings {
                         title: NSLocalizedString("TEXT_HORIZONTAL_PADDING"),
                         notification: .init("Reader.textHorizontalPadding"),
                         value: .stepper(.init(minimumValue: 8, maximumValue: 48, stepValue: 4))
+                    ),
+                    .init(
+                        key: "Reader.textTopPadding",
+                        title: textReaderLocalized("TEXT_TOP_PADDING", fallback: "Top Padding"),
+                        notification: .init("Reader.textTopPadding"),
+                        value: .stepper(.init(minimumValue: -24, maximumValue: 80, stepValue: 2))
+                    ),
+                    .init(
+                        key: "Reader.textBottomPadding",
+                        title: textReaderLocalized("TEXT_BOTTOM_PADDING", fallback: "Bottom Padding"),
+                        notification: .init("Reader.textBottomPadding"),
+                        value: .stepper(.init(minimumValue: -24, maximumValue: 80, stepValue: 2))
+                    ),
+                    .init(
+                        key: "Reader.textParagraphSpacing",
+                        title: textReaderLocalized("TEXT_PARAGRAPH_SPACING", fallback: "Paragraph Spacing"),
+                        notification: .init("Reader.textParagraphSpacing"),
+                        value: .stepper(.init(minimumValue: 0, maximumValue: 32, stepValue: 1))
+                    ),
+                    .init(
+                        key: "Reader.textFirstLineIndent",
+                        title: textReaderLocalized("TEXT_FIRST_LINE_INDENT", fallback: "First-line Indent"),
+                        notification: .init("Reader.textFirstLineIndent"),
+                        value: .stepper(.init(minimumValue: 0, maximumValue: 4, stepValue: 1))
                     )
                 ]
             ))

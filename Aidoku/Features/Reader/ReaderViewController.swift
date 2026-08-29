@@ -47,6 +47,33 @@ class ReaderViewController: BaseObservingViewController {
     private var sessionReadPages: Set<Int> = []
     private var sessionStartDate: Date?
     private var sessionLastInteraction: Date?
+    private var speechInitiatedChapterChange = false
+    private var pendingSpeechSegment: ReaderSpeechSegment?
+
+    private enum AutoReadingContent {
+        case text
+        case image
+    }
+
+    private struct AutoReadingSession {
+        let content: AutoReadingContent
+        let originalReadingMode: ReadingMode
+        let originalTextReaderStyle: String
+    }
+
+    private var autoReadingSession: AutoReadingSession?
+    private var autoReadingSpeed: Double {
+        get {
+            let value = UserDefaults.standard.object(forKey: "Reader.autoScrollSpeed") as? Double ?? 1
+            return min(8, max(0.5, value))
+        }
+        set {
+            UserDefaults.standard.set(min(8, max(0.5, newValue)), forKey: "Reader.autoScrollSpeed")
+        }
+    }
+    private var temporaryTextReaderStyle: String?
+    private var autoReadingPaused = false
+    private var isAutoReadingActive: Bool { autoReadingSession != nil }
 
     weak var reader: ReaderReaderDelegate?
 
@@ -96,6 +123,18 @@ class ReaderViewController: BaseObservingViewController {
         button.translatesAutoresizingMaskIntoConstraints = false
         button.isHidden = true
         return button
+    }()
+    private lazy var speechController = ReaderSpeechController()
+    private lazy var speechBarButton: UIBarButtonItem = {
+        let item = UIBarButtonItem(
+            image: UIImage(systemName: "speaker.wave.2"),
+            style: .plain,
+            target: self,
+            action: #selector(openSpeech)
+        )
+        item.accessibilityLabel = readerSpeechLocalized("MICROSOFT_TTS_TITLE", fallback: "Read aloud")
+        item.isEnabled = false
+        return item
     }()
     private lazy var descriptionButtonController: UIHostingController<ReaderPageDescriptionButtonView> = {
         let buttonView = ReaderPageDescriptionButtonView(source: source, pages: [])
@@ -189,6 +228,7 @@ class ReaderViewController: BaseObservingViewController {
         moreButton.isEnabled = chapter.url != nil
         navigationItem.rightBarButtonItems = [
             moreButton,
+            speechBarButton,
             UIBarButtonItem(
                 image: UIImage(systemName: "textformat.size"),
                 style: .plain,
@@ -261,6 +301,37 @@ class ReaderViewController: BaseObservingViewController {
         view.addGestureRecognizer(pageOffsetGesture)
 
         // set reader
+        speechController.onStateChange = { [weak self] state in
+            guard let self else { return }
+            let navigationLocked: Bool
+            switch state {
+                case .loading, .playing, .paused:
+                    navigationLocked = true
+                case .idle, .failed:
+                    navigationLocked = false
+            }
+            self.speechBarButton.image = UIImage(
+                systemName: state == .playing ? "speaker.wave.2.fill" : "speaker.wave.2"
+            )
+            self.setSpeechNavigationLocked(navigationLocked)
+        }
+        speechController.revealSegment = { [weak self] segment in
+            self?.revealSpeechSegment(segment)
+        }
+        speechController.loadMoreSegments = { [weak self] chapterKey in
+            guard let self,
+                  let index = self.chapterList.firstIndex(where: { $0.key == chapterKey }),
+                  index > 0
+            else { return [] }
+            let nextChapter = self.chapterList[index - 1]
+            return await (self.reader as? ReaderSpeechTextProviding)?.prepareSpeechSegments(for: nextChapter) ?? []
+        }
+        toolbarView.onAutoReadingSpeedChange = { [weak self] speed in
+            self?.setAutoReadingSpeed(speed)
+        }
+        toolbarView.onAutoReadingStop = { [weak self] in
+            self?.stopAutoReading()
+        }
         let readingModeKey = "Reader.readingMode.\(manga.identifier)"
         UserDefaults.standard.register(defaults: [readingModeKey: "default"])
         setReadingMode(UserDefaults.standard.string(forKey: readingModeKey))
@@ -292,6 +363,7 @@ class ReaderViewController: BaseObservingViewController {
         ])
 
         updateAutoScrollButton()
+        updateSpeechButton()
     }
 
     override func observe() {
@@ -307,6 +379,12 @@ class ReaderViewController: BaseObservingViewController {
         }
         addObserver(forName: "Reader.autoScroll") { [weak self] _ in
             self?.updateAutoScrollButton()
+        }
+        addObserver(forName: "Reader.autoScrollSpeed") { [weak self] _ in
+            guard let self else { return }
+            (self.reader as? ReaderAutoScrolling)?.updateAutoScrollingSpeed(self.autoReadingSpeed)
+            self.toolbarView.setAutoReading(active: self.isAutoReadingActive, speed: self.autoReadingSpeed)
+            self.updateAutoScrollButtonIcon()
         }
         addObserver(forName: .readerTapZones) { [weak self] _ in
             self?.updateTapZone()
@@ -372,6 +450,9 @@ class ReaderViewController: BaseObservingViewController {
                 self.sessionStartDate = Date.now
                 self.sessionLastInteraction = nil
             }
+            if self.speechController.isActive, let segment = self.speechController.currentSegment {
+                self.revealSpeechSegment(segment)
+            }
         }
         if #available(iOS 26.0, *) {
             addObserver(forName: UIScene.willEnterForegroundNotification) { [weak self] _ in
@@ -379,9 +460,6 @@ class ReaderViewController: BaseObservingViewController {
                     self?.hideBars()
                 }
             }
-        }
-        addObserver(forName: "Reader.autoScroll") { [weak self] _ in
-            self?.updateAutoScrollButton()
         }
     }
 
@@ -404,15 +482,19 @@ class ReaderViewController: BaseObservingViewController {
         configureNavigationBarDismissTapGesture(enabled: isDictionarySingleTapLookupActiveForCurrentChapter)
 
         // resume auto scroll if it was paused when presenting a sheet
-        if let reader = reader as? ReaderWebtoonViewController {
-            reader.resumeAutoScroll()
+        if
+            UserDefaults.standard.bool(forKey: "Reader.autoScroll"),
+            let autoReader = reader as? ReaderAutoScrolling,
+            autoReader.isAutoScrolling
+        {
+            autoReader.resumeAutoScrolling()
         }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
 
-        (reader as? ReaderWebtoonViewController)?.stopAutoScroll()
+        (reader as? ReaderAutoScrolling)?.pauseAutoScrolling()
 
         if !chaptersToRemoveDownload.isEmpty {
             Task {
@@ -590,7 +672,7 @@ extension ReaderViewController {
     }
 
     @objc func openReaderSettings() {
-        (reader as? ReaderWebtoonViewController)?.stopAutoScroll()
+        (reader as? ReaderAutoScrolling)?.pauseAutoScrolling()
 
         let currentReader: Reader
         switch reader {
@@ -607,7 +689,10 @@ extension ReaderViewController {
             rootView: ReaderSettingsView(
                 mangaId: manga.identifier,
                 reader: currentReader,
-                chapterLanguage: chapter.language ?? source?.languages.first
+                chapterLanguage: chapter.language ?? source?.languages.first,
+                onStartAutoReading: { [weak self] speed in
+                    self?.startAutoReading(speed: speed)
+                }
             )
         )
         present(vc, animated: true)
@@ -615,12 +700,12 @@ extension ReaderViewController {
 
     @objc func openWebView() {
         guard let url = chapter.url, url.scheme == "http" || url.scheme == "https" else { return }
-        (reader as? ReaderWebtoonViewController)?.stopAutoScroll()
+        (reader as? ReaderAutoScrolling)?.pauseAutoScrolling()
         present(SFSafariViewController(url: url), animated: true)
     }
 
     @objc func openChapterList() {
-        (reader as? ReaderWebtoonViewController)?.stopAutoScroll()
+        (reader as? ReaderAutoScrolling)?.pauseAutoScrolling()
 
         var view = ReaderChapterListView(
             chapterList: chapterList,
@@ -636,7 +721,35 @@ extension ReaderViewController {
         present(UIHostingController(rootView: view), animated: true)
     }
 
+    @objc private func openSpeech() {
+        guard reader is ReaderSpeechTextProviding else { return }
+        (reader as? ReaderAutoScrolling)?.pauseAutoScrolling()
+
+        let view = ReaderSpeechControlView(
+            controller: speechController,
+            settings: .shared,
+            segments: { [weak self] in
+                (self?.reader as? ReaderSpeechTextProviding)?.speechSegmentsFromCurrentPosition() ?? []
+            },
+            onDone: { [weak self] in
+                self?.dismiss(animated: true)
+            }
+        )
+        let controller = UIHostingController(rootView: view)
+        controller.modalPresentationStyle = .formSheet
+        if let sheet = controller.sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.prefersGrabberVisible = true
+        }
+        present(controller, animated: true)
+    }
+
     @objc func close() {
+        autoReadingSession = nil
+        autoReadingPaused = false
+        temporaryTextReaderStyle = nil
+        (reader as? ReaderAutoScrolling)?.stopAutoScrolling()
+        speechController.stop()
         Task {
             await temporaryPageStore.removeAll()
         }
@@ -644,10 +757,49 @@ extension ReaderViewController {
     }
 
     @objc func sliderMoved(_ sender: ReaderSliderView) {
+        guard !speechController.isActive else { return }
         reader?.sliderMoved(value: sender.currentValue)
     }
     @objc func sliderStopped(_ sender: ReaderSliderView) {
+        guard !speechController.isActive else { return }
         reader?.sliderStopped(value: sender.currentValue)
+    }
+
+    private func revealSpeechSegment(_ segment: ReaderSpeechSegment) {
+        if segment.chapterKey == chapter.key {
+            guard
+                let provider = reader as? ReaderSpeechTextProviding,
+                provider.revealSpeechSegment(segment)
+            else {
+                pendingSpeechSegment = segment
+                return
+            }
+            pendingSpeechSegment = nil
+            return
+        }
+
+        guard let target = chapterList.first(where: { $0.key == segment.chapterKey }) else { return }
+        pendingSpeechSegment = segment
+        speechInitiatedChapterChange = true
+        setChapter(target)
+        loadCurrentChapter()
+        speechInitiatedChapterChange = false
+    }
+
+    private func revealPendingSpeechSegmentIfPossible() {
+        guard
+            let segment = pendingSpeechSegment,
+            segment.chapterKey == chapter.key,
+            let provider = reader as? ReaderSpeechTextProviding
+        else { return }
+        if provider.revealSpeechSegment(segment) {
+            pendingSpeechSegment = nil
+        }
+    }
+
+    private func setSpeechNavigationLocked(_ locked: Bool) {
+        (reader as? ReaderSpeechTextProviding)?.setSpeechNavigationLocked(locked)
+        toolbarView.sliderView.isEnabled = !locked
     }
 }
 
@@ -697,20 +849,40 @@ extension ReaderViewController {
     }
 
     @objc private func toggleAutoScroll() {
-        guard let webtoonReader = reader as? ReaderWebtoonViewController else { return }
-        webtoonReader.toggleAutoScroll()
+        if !isAutoReadingActive {
+            startAutoReading(speed: autoReadingSpeed)
+            return
+        }
+        guard let autoReader = reader as? ReaderAutoScrolling else { return }
+        if autoReadingPaused {
+            autoReadingPaused = false
+            autoReader.resumeAutoScrolling()
+        } else {
+            autoReadingPaused = true
+            autoReader.pauseAutoScrolling()
+        }
+        updateAutoScrollButtonIcon()
     }
 
     private func updateAutoScrollButton() {
-        let webtoonReader = reader as? ReaderWebtoonViewController
-        let visible = webtoonReader != nil && UserDefaults.standard.bool(forKey: "Reader.autoScroll")
+        let autoReader = reader as? ReaderAutoScrolling
+        let enabled = UserDefaults.standard.bool(forKey: "Reader.autoScroll")
+        let supported = reader is ReaderPagedViewController
+            || reader is ReaderWebtoonViewController
+            || reader is ReaderPagedTextViewController
+            || reader is ReaderTextViewController
+        let visible = supported && (enabled || isAutoReadingActive)
 
         if !visible {
-            webtoonReader?.stopAutoScroll()
+            if isAutoReadingActive {
+                stopAutoReading()
+            } else {
+                autoReader?.stopAutoScrolling()
+            }
         }
 
-        webtoonReader?.onAutoScrollStateChange = { [weak self] _ in
-            self?.updateAutoScrollButtonIcon()
+        autoReader?.autoScrollingDidReachEnd = { [weak self] in
+            self?.handleAutoReadingEnd()
         }
 
         autoScrollButton.isHidden = !visible
@@ -720,8 +892,169 @@ extension ReaderViewController {
     }
 
     private func updateAutoScrollButtonIcon() {
-        let isAutoScrolling = (reader as? ReaderWebtoonViewController)?.isAutoScrolling == true
+        let isAutoScrolling = isAutoReadingActive
+            && !autoReadingPaused
+            && (reader as? ReaderAutoScrolling)?.isAutoScrolling == true
         autoScrollButton.configuration?.image = UIImage(systemName: isAutoScrolling ? "pause.fill" : "play.fill")
+    }
+
+    private func startAutoReading(speed: Double) {
+        guard autoReadingSession == nil else {
+            setAutoReadingSpeed(speed)
+            return
+        }
+
+        let content: AutoReadingContent = switch reader {
+            case is ReaderTextViewController, is ReaderPagedTextViewController: .text
+            default: .image
+        }
+        let alreadyUsesAutoScrollReader = reader is ReaderTextViewController || reader is ReaderWebtoonViewController
+        speechController.stop()
+        autoReadingPaused = false
+        autoReadingSpeed = speed
+        autoReadingSession = AutoReadingSession(
+            content: content,
+            originalReadingMode: readingMode,
+            originalTextReaderStyle: UserDefaults.standard.string(forKey: "Reader.textReaderStyle") ?? "paged"
+        )
+        toolbarView.setAutoReading(active: true, speed: autoReadingSpeed)
+        toolbarView.sliderView.isEnabled = false
+        dictionaryLongPressGesture?.isEnabled = false
+
+        Task {
+            await updateReadPosition()
+            await MainActor.run {
+                guard self.autoReadingSession != nil else { return }
+                switch content {
+                    case .text:
+                        self.temporaryTextReaderStyle = "scroll"
+                        self.setReader(.text)
+                    case .image:
+                        self.readingMode = .webtoon
+                        self.setReader(.scroll)
+                }
+                if !alreadyUsesAutoScrollReader {
+                    self.reader?.setChapter(self.chapter, startPage: self.currentPage)
+                }
+                self.configureAutoScrollingReaderIfNeeded()
+                self.updateTapZone()
+                self.hideBars()
+            }
+        }
+    }
+
+    private func setAutoReadingSpeed(_ speed: Double) {
+        autoReadingSpeed = speed
+        toolbarView.setAutoReading(active: isAutoReadingActive, speed: autoReadingSpeed)
+        (reader as? ReaderAutoScrolling)?.updateAutoScrollingSpeed(autoReadingSpeed)
+        updateAutoScrollButtonIcon()
+    }
+
+    private func configureAutoScrollingReaderIfNeeded() {
+        guard isAutoReadingActive, let autoReader = reader as? ReaderAutoScrolling else { return }
+        autoReader.autoScrollingDidReachEnd = { [weak self] in
+            self?.handleAutoReadingEnd()
+        }
+        autoReader.startAutoScrolling(speed: autoReadingSpeed)
+        updateAutoScrollButtonIcon()
+    }
+
+    private func handleAutoReadingEnd() {
+        guard isAutoReadingActive else {
+            updateAutoScrollButtonIcon()
+            return
+        }
+        guard autoReadingSession?.content == .image, let nextChapter = getNextChapter() else {
+            stopAutoReading()
+            return
+        }
+
+        setChapter(nextChapter)
+        currentPage = 1
+        reader?.setChapter(nextChapter, startPage: 1)
+    }
+
+    private func stopAutoReading(completion: (() -> Void)? = nil) {
+        guard let session = autoReadingSession else {
+            completion?()
+            return
+        }
+
+        autoReadingSession = nil
+        autoReadingPaused = false
+        (reader as? ReaderAutoScrolling)?.stopAutoScrolling()
+        toolbarView.setAutoReading(active: false, speed: autoReadingSpeed)
+        toolbarView.sliderView.isEnabled = !speechController.isActive
+        configureDictionaryLookupGesture()
+
+        Task {
+            await updateReadPosition()
+            await MainActor.run {
+                self.temporaryTextReaderStyle = nil
+                self.readingMode = session.originalReadingMode
+                let needsReaderReload: Bool
+                switch session.content {
+                    case .text:
+                        needsReaderReload = session.originalTextReaderStyle == "paged"
+                        self.setReader(.text)
+                    case .image:
+                        switch session.originalReadingMode {
+                            case .ltr, .rtl, .vertical:
+                                needsReaderReload = true
+                                self.setReader(.paged)
+                            case .webtoon, .continuous:
+                                needsReaderReload = false
+                                self.setReader(.scroll)
+                        }
+                }
+                if needsReaderReload {
+                    self.reader?.setChapter(self.chapter, startPage: self.currentPage)
+                }
+                self.updateTapZone()
+                completion?()
+            }
+        }
+    }
+
+    /// Text EPUBs may contain image-only spine entries such as covers. Skip
+    /// those entries while a text auto-reading session is active.
+    private func skipNonTextLocalEpubChapterDuringAutoReading() -> Bool {
+        guard
+            autoReadingSession?.content == .text,
+            manga.sourceKey == LocalSourceRunner.sourceKey,
+            chapter.key.lowercased().contains(".epub/"),
+            let anchorIndex = chapterList.firstIndex(of: chapter)
+        else {
+            return false
+        }
+
+        (reader as? ReaderAutoScrolling)?.pauseAutoScrolling()
+        Task {
+            if anchorIndex > 0 {
+                for index in stride(from: anchorIndex - 1, through: 0, by: -1) {
+                    let candidate = chapterList[index]
+                    guard candidate.key.lowercased().contains(".epub/") else { break }
+                    let candidatePages = await LocalFileManager.shared.fetchPages(
+                        mangaId: manga.key,
+                        chapterId: candidate.key
+                    )
+                    guard !candidatePages.isEmpty else { continue }
+                    if candidatePages.contains(where: { ReaderSpeechTextExtractor.text(from: $0) != nil }) {
+                        await MainActor.run {
+                            self.setChapter(candidate)
+                            self.currentPage = 1
+                            self.reader?.setChapter(candidate, startPage: 1)
+                            self.configureAutoScrollingReaderIfNeeded()
+                        }
+                        return
+                    }
+                }
+            }
+            await MainActor.run {
+                self.stopAutoReading()
+            }
+        }
+        return true
     }
 
     func setReader(_ type: Reader) {
@@ -750,7 +1083,9 @@ extension ReaderViewController {
                 toolbarView.sliderView.direction = .forward
 
                 // Check user preference for text reader style
-                let textReaderStyle = UserDefaults.standard.string(forKey: "Reader.textReaderStyle") ?? "paged"
+                let textReaderStyle = temporaryTextReaderStyle
+                    ?? UserDefaults.standard.string(forKey: "Reader.textReaderStyle")
+                    ?? "paged"
                 if textReaderStyle == "paged" {
                     // Kindle-like paginated experience
                     if !(reader is ReaderPagedTextViewController) {
@@ -768,19 +1103,29 @@ extension ReaderViewController {
                 }
         }
         if let pageController {
-            if let webtoonReader = reader as? ReaderWebtoonViewController {
-                webtoonReader.stopAutoScroll()
+            if !speechInitiatedChapterChange {
+                speechController.stop()
             }
+            // Keep an active session paused while a sheet or system UI is shown;
+            // viewDidAppear resumes it after the reader is visible again.
+            (reader as? ReaderAutoScrolling)?.pauseAutoScrolling()
             reader?.remove()
             pageController.delegate = self
             reader = pageController
             add(child: pageController, below: descriptionButtonController.view)
         }
         reader?.readingMode = readingMode
+        setSpeechNavigationLocked(speechController.isActive)
+        configureAutoScrollingReaderIfNeeded()
         configureDictionaryOverlayInteractionMode()
         configureDictionaryOverlayTapHandler()
         updateAutoScrollButton()
+        updateSpeechButton()
         disableSwipeGestures()
+    }
+
+    private func updateSpeechButton() {
+        speechBarButton.isEnabled = reader is ReaderSpeechTextProviding
     }
 }
 
@@ -894,6 +1239,10 @@ extension ReaderViewController: ReaderHoldingDelegate {
     func setChapter(_ chapter: AidokuRunner.Chapter) {
         guard chapter != self.chapter else { return }
 
+        if speechController.isActive && !speechInitiatedChapterChange {
+            speechController.stop()
+        }
+
         // store current history data since it will change when new chapter loads
         let currentPage = currentPage
         let totalPages = toolbarView.totalPages
@@ -938,6 +1287,7 @@ extension ReaderViewController: ReaderHoldingDelegate {
         currentPosition = position
         toolbarView.currentPage = page
         toolbarView.updateSliderPosition()
+        revealPendingSpeechSegmentIfPossible()
         // Mark as completed when reaching the last page
         // Exception: Don't mark for the pre-pagination placeholder (single text page before
         // ReaderPagedTextViewController has paginated it). Once paginated, even single-page
@@ -971,6 +1321,27 @@ extension ReaderViewController: ReaderHoldingDelegate {
     }
 
     func setPages(_ pages: [Page]) {
+        if let session = autoReadingSession {
+            let containsOnlyText = !pages.isEmpty && pages.allSatisfy({ $0.isTextPage })
+            switch session.content {
+                case .image where containsOnlyText:
+                    stopAutoReading { [weak self] in
+                        self?.setPages(pages)
+                    }
+                    return
+                case .text where !containsOnlyText:
+                    if skipNonTextLocalEpubChapterDuringAutoReading() {
+                        return
+                    }
+                    stopAutoReading { [weak self] in
+                        self?.setPages(pages)
+                    }
+                    return
+                default:
+                    break
+            }
+        }
+
         // If already in a text reader with text pages, just update toolbar - don't trigger any switches
         if
             reader is ReaderPagedTextViewController || reader is ReaderTextViewController,

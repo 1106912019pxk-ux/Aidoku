@@ -50,4 +50,35 @@ import UIKit
         let paginator = TextPaginator()
         _ = paginator.paginate(markdown: "", pageSize: pageSize)
     }
+
+    @Test("Asymmetric text padding changes the usable page area")
+    func asymmetricPaddingChangesContentSize() {
+        var config = PaginationConfig()
+        config.horizontalPadding = 20
+        config.topPadding = 30
+        config.bottomPadding = 50
+
+        let size = TextPaginator(config: config).contentSize(for: pageSize)
+
+        #expect(size.width == 280)
+        #expect(size.height == 400)
+    }
+
+    @Test("First-line indent is measured in selected-font characters")
+    func firstLineIndentUsesFontSize() {
+        var config = PaginationConfig()
+        config.fontSize = 18
+        config.firstLineIndent = 2
+
+        #expect(config.paragraphStyle.firstLineHeadIndent == 36)
+    }
+
+    @Test("A font family selection resolves to an installable face")
+    func fontFamilyResolvesToFace() throws {
+        #expect(TextReaderFontResolver.resolvedName(for: "System") == nil)
+
+        let family = try #require(UIFont.familyNames.first)
+        let resolvedName = try #require(TextReaderFontResolver.resolvedName(for: family))
+        #expect(UIFont(name: resolvedName, size: 16) != nil)
+    }
 }

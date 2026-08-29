@@ -171,14 +171,23 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 "Reader.pillarboxAmount": 15,
                 "Reader.pillarboxOrientation": "both",
                 "Reader.autoScroll": false,
-                "Reader.autoScrollSpeed": 5,
+                "Reader.autoScrollSpeed": 1.0,
+                "Reader.speechProvider": "microsoft",
+                "Reader.microsoftSpeechVoice": "zh-CN-XiaoxiaoNeural",
+                "Reader.microsoftSpeechRate": 1.0,
+                "Reader.speechSystemFallback": true,
                 "Reader.orientation": "device",
 
                 "Reader.textReaderStyle": "scroll",
                 "Reader.textFontFamily": "System",
+                "Reader.textBackgroundColor": "system",
                 "Reader.textFontSize": 18,
                 "Reader.textLineSpacing": 8,
                 "Reader.textHorizontalPadding": 24,
+                "Reader.textTopPadding": 32,
+                "Reader.textBottomPadding": 32,
+                "Reader.textParagraphSpacing": 12,
+                "Reader.textFirstLineIndent": 0,
 
                 "Tracking.updateAfterReading": true,
                 "Tracking.autoSyncFromTracker": false,
@@ -207,6 +216,20 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         )
         AppSettings.registerDefaults()
 
+        // Register fonts from previous in-place installs before any reader is opened.
+        let textReaderFontStore = TextReaderFontStore.shared
+        textReaderFontStore.refresh()
+        // The removed Readium prototype stored its global font under this key.
+        // Preserve that choice when the app is installed over an existing build.
+        if
+            UserDefaults.standard.string(forKey: "Reader.textFontFamily") == "System",
+            let legacyFamily = UserDefaults.standard.string(forKey: "EBook.defaultFontFamily"),
+            !legacyFamily.isEmpty,
+            let identifier = textReaderFontStore.identifier(forLegacyFamily: legacyFamily)
+        {
+            UserDefaults.standard.set(identifier, forKey: "Reader.textFontFamily")
+        }
+
         // PlayCover fix: eagerly initialize the Core Data stack on the main thread
         // before any background migration task touches it. The `lazy var container`
         // and the singleton's init are not thread-safe; under PlayCover's timing the
@@ -233,10 +256,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         DataLoader.sharedUrlCache.diskCapacity = 0
 
         let pipeline = ImagePipeline(delegate: self) {
-            let dataLoader: DataLoader = {
+            let dataLoader: any DataLoading = {
                 let config = URLSessionConfiguration.default
                 config.urlCache = nil
-                return DataLoader(configuration: config)
+                return PicaRoutingDataLoader(fallback: DataLoader(configuration: config))
             }()
             let dataCache = try? DataCache(name: "app.aidoku.Aidoku.datacache") // disk cache
             let imageCache = Nuke.ImageCache() // memory cache
@@ -351,6 +374,52 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         InterfaceOrientationCoordinator.shared.supportedOrientations
+    }
+}
+
+private final class PicaRoutingDataLoader: DataLoading, @unchecked Sendable {
+    private let fallback: any DataLoading
+
+    init(fallback: any DataLoading) {
+        self.fallback = fallback
+    }
+
+    func loadData(
+        with request: URLRequest,
+        didReceiveData: @escaping @Sendable (Data, URLResponse) -> Void,
+        completion: @escaping @Sendable (Error?) -> Void
+    ) -> any Cancellable {
+        guard PicaNetworkRouting.shouldRoute(request) else {
+            return fallback.loadData(
+                with: request,
+                didReceiveData: didReceiveData,
+                completion: completion
+            )
+        }
+
+        let task = Task {
+            do {
+                let (data, response) = try await PicaNetworkRouting.data(for: request)
+                try Task<Never, Never>.checkCancellation()
+                didReceiveData(data, response)
+                completion(nil)
+            } catch {
+                completion(error)
+            }
+        }
+        return PicaRoutingCancellable(task: task)
+    }
+}
+
+private final class PicaRoutingCancellable: Cancellable, @unchecked Sendable {
+    private let task: Task<Void, Never>
+
+    init(task: Task<Void, Never>) {
+        self.task = task
+    }
+
+    func cancel() {
+        task.cancel()
     }
 }
 

@@ -226,7 +226,7 @@
 "IMPORT" = "Import";
 "IMPORT_FILE" = "Import File";
 "LOCAL_FILE_IMPORT" = "Local File Import";
-"LOCAL_FILE_IMPORT_TEXT" = "Import a CBZ, ePub, or ZIP file containing images to read.";
+"LOCAL_FILE_IMPORT_TEXT" = "Import a CBZ, EPUB, TXT, or ZIP file to read.";
 "CHAPTER_TITLE" = "Chapter Title";
 "SERIES_TITLE" = "Series Title";
 "DESCRIPTION" = "Description";
@@ -584,6 +584,20 @@
 "TEXT_FONT_SIZE" = "Font Size";
 "TEXT_LINE_SPACING" = "Line Spacing";
 "TEXT_HORIZONTAL_PADDING" = "Horizontal Padding";
+"TEXT_TOP_PADDING" = "Top Padding";
+"TEXT_BOTTOM_PADDING" = "Bottom Padding";
+"TEXT_PARAGRAPH_SPACING" = "Paragraph Spacing";
+"TEXT_FIRST_LINE_INDENT" = "First-line Indent";
+"TEXT_BACKGROUND_COLOR" = "Background Color";
+"TEXT_BACKGROUND_SYSTEM" = "Follow System";
+"TEXT_BACKGROUND_WHITE" = "White";
+"TEXT_BACKGROUND_WARM_PAPER" = "Warm Paper";
+"TEXT_BACKGROUND_SOFT_GREEN" = "Soft Green";
+"TEXT_BACKGROUND_MIST_BLUE" = "Mist Blue";
+"TEXT_BACKGROUND_SOFT_GRAY" = "Soft Gray";
+"TEXT_BACKGROUND_BLACK" = "Black";
+"IMPORTED_FONTS" = "Imported Fonts";
+"IMPORT_TTF_OTF_FONT" = "Import TTF/OTF Font";
 
 // Dictionary
 "DICTIONARY_LOOKUP" = "Dictionary Lookup";
@@ -835,6 +849,10 @@
 "PILLARBOX_ORIENTATION_INFO" = "Pillarbox Orientation determines which orientations pillarboxing should be enabled for.";
 "AUTO_SCROLL" = "Auto Scroll";
 "AUTO_SCROLL_SPEED" = "Auto Scroll Speed";
+"AUTO_READING_STOP" = "Stop Auto Reading";
+"AUTO_READING" = "Auto Reading";
+"AUTO_READING_SPEED" = "Auto Reading Speed";
+"AUTO_READING_START" = "Start Auto Reading";
 "BOTH" = "Both";
 "%@_TRACKER_LOGIN_NEEDED" = "%@ Login Needed";
 "%@_TRACKER_LOGIN_NEEDED_TEXT" = "Your %@ token has expired, so the associated tracker will stop working until you re-login in settings.";
@@ -860,3 +878,42 @@
 "TOGGLE_BARS" = "Toggle bar visibility";
 "CLOSE_READER" = "Close reader";
 "TOGGLE_PAGE_OFFSET" = "Toggle page offset";
+
+"TXT_NAME" = "TXT";
+"TXT_ENCODING" = "Text Encoding";
+"TXT_AUTO_CHAPTERS" = "Detect Chapters Automatically";
+"TXT_CUSTOM_CHAPTER_RULE" = "Use Custom Chapter Rule";
+"TXT_CHAPTER_REGEX" = "Chapter title regular expression";
+"TXT_UPDATE_PREVIEW" = "Update Preview";
+"TXT_CHAPTER_PREVIEW" = "Chapter Preview";
+"TXT_MORE_CHAPTERS" = "…and %i more chapters";
+"TXT_INVALID_REGEX" = "The custom chapter rule is not a valid regular expression.";
+"TXT_EMPTY_REGEX" = "Enter a regular expression for the custom chapter rule.";
+"TXT_TOO_MANY_CHAPTERS" = "The chapter rule matched too many lines. Please use a more specific rule.";
+"TXT_DECODE_FAILED" = "The text could not be decoded with this encoding.";
+"TXT_PREFACE" = "Preface";
+"TXT_BODY" = "Text";
+
+// Reader speech
+"READER_TTS_PROVIDER_MICROSOFT" = "Microsoft online speech";
+"READER_TTS_PROVIDER_SYSTEM" = "Apple system speech";
+"READER_TTS_ENGINE" = "Speech engine";
+"READER_TTS_FALLBACK" = "Use Apple speech if online fails";
+"MICROSOFT_TTS_VOICE" = "Voice";
+"MICROSOFT_TTS_RATE" = "Rate";
+"MICROSOFT_TTS_PLAYBACK" = "Playback";
+"MICROSOFT_TTS_LOADING" = "Preparing";
+"MICROSOFT_TTS_FREE_INFO" = "Microsoft speech sends the selected text to its online service. Apple speech is used as the offline fallback.";
+"MICROSOFT_TTS_TITLE" = "Aidoku speech";
+"MICROSOFT_TTS_START" = "Start reading aloud";
+"MICROSOFT_TTS_PAUSE" = "Pause";
+"MICROSOFT_TTS_RESUME" = "Resume";
+"MICROSOFT_TTS_STOP" = "Stop";
+"MICROSOFT_TTS_PROGRESS" = "Segment %d/%d";
+"MICROSOFT_TTS_LOADING_NEXT" = "Loading next chapter";
+"MICROSOFT_TTS_CHAPTER_FINISHED" = "Reading complete";
+"MICROSOFT_TTS_NO_TEXT" = "There is no readable text here.";
+"MICROSOFT_TTS_INVALID_RESPONSE" = "Microsoft returned invalid audio.";
+"MICROSOFT_TTS_PLAYBACK_FAILED" = "Speech playback failed.";
+"MICROSOFT_TTS_FREE_UNAVAILABLE" = "Microsoft online speech is temporarily unavailable.";
+"READER_TTS_SYSTEM_UNAVAILABLE" = "No usable system voice is installed.";

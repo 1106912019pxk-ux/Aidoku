@@ -52,6 +52,8 @@ class ReaderWebtoonViewController: ZoomableCollectionViewController {
     private var autoScrollDisplayLink: CADisplayLink?
     private var autoScrollLastTimestamp: CFTimeInterval?
     private var autoScrollPausedForUserInteraction = false
+    private var autoReadingSpeed = 1.0
+    private var autoScrollAppendingNextChapter = false
 
     private(set) var isAutoScrolling = false {
         didSet {
@@ -59,6 +61,7 @@ class ReaderWebtoonViewController: ZoomableCollectionViewController {
         }
     }
     var onAutoScrollStateChange: ((Bool) -> Void)?
+    var autoScrollingDidReachEnd: (() -> Void)?
 
     init(
         source: AidokuRunner.Source?,
@@ -271,8 +274,7 @@ extension ReaderWebtoonViewController {
             return
         }
 
-        let speed = max(UserDefaults.standard.integer(forKey: "Reader.autoScrollSpeed"), 1)
-        let distance = CGFloat(speed * 100) * CGFloat(displayLink.timestamp - previousTimestamp)
+        let distance = CGFloat(autoReadingSpeed * 56) * CGFloat(displayLink.timestamp - previousTimestamp)
         let minimumY = -scrollView.adjustedContentInset.top
         let maximumY = max(
             minimumY,
@@ -284,12 +286,48 @@ extension ReaderWebtoonViewController {
 
         if nextY >= maximumY {
             stopAutoScroll()
-
-            if infinite {
-                isScrolling = false
-                checkInfiniteLoad()
+            let previousSectionCount = pages.count
+            autoScrollAppendingNextChapter = true
+            loadingNext = true
+            Task {
+                await appendNextChapter()
+                loadingNext = false
+                autoScrollAppendingNextChapter = false
+                if pages.count > previousSectionCount {
+                    startAutoScrolling(speed: autoReadingSpeed)
+                } else {
+                    autoScrollingDidReachEnd?()
+                }
             }
         }
+    }
+}
+
+// MARK: - Reader Auto Scrolling
+
+extension ReaderWebtoonViewController: ReaderAutoScrolling {
+    func startAutoScrolling(speed: Double) {
+        updateAutoScrollingSpeed(speed)
+        if !isAutoScrolling {
+            toggleAutoScroll()
+        }
+    }
+
+    func updateAutoScrollingSpeed(_ speed: Double) {
+        autoReadingSpeed = min(8, max(0.5, speed))
+        autoScrollLastTimestamp = nil
+    }
+
+    func pauseAutoScrolling() {
+        pauseAutoScroll()
+    }
+
+    func resumeAutoScrolling() {
+        resumeAutoScroll()
+    }
+
+    func stopAutoScrolling() {
+        stopAutoScroll()
     }
 }
 
@@ -632,6 +670,13 @@ extension ReaderWebtoonViewController {
 
         // check if pages failed to load
         if viewModel.preloadedPages.isEmpty {
+            return
+        }
+
+        // Text spine entries belong in the text reader. Let the parent move to
+        // that chapter instead of inserting text pages into the image reader.
+        if autoScrollAppendingNextChapter,
+           viewModel.preloadedPages.allSatisfy({ $0.isTextPage }) {
             return
         }
 

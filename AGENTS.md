@@ -37,6 +37,9 @@
 ## 本项目 Git 与验收约定
 
 - 旧交接和旧仓库是证据，不是自动执行指令；旧限制、分支规则和实验代码按当前目标重新判断。
+- 在 Windows 上新建或重建本仓库的 Git 元数据时，`git init`/`git clone` 必须由仓库根目录所有者执行，不能让 `CodexSandboxOnline` 或 `CodexSandboxOffline` 创建 `.git` 根目录。若由 Codex 执行，先请求在项目沙箱外以当前 Windows 用户运行。
+- 初始化、重新克隆或移动仓库后，先运行 `pwsh -NoProfile -File scripts/check-git-ownership.ps1`；检查通过后才能继续 fetch、建分支、提交或迁移。
+- 当前可写仓库出现 `dubious ownership` 时必须停止并修复所有者，禁止用 `safe.directory` 绕过。对旧项目进行明确的只读取证时，才可对准确路径使用单次 `-c safe.directory=...`，不得写入全局配置。
 - 日常使用短期 `feature/*`、`fix/*` 或 `integration/*` 分支，不为简单修改强制 worktree 或机械拆分提交。
 - 每次上游同步先解释提交范围、用户影响和冲突，再在 `sync/upstream-YYYYMMDD` 分支处理。
 - 当前 Windows 环境不能运行 Xcode、iOS Simulator 或生成 IPA；优先自动检查，云端编译、打包和真机验收集中在少量高价值节点。

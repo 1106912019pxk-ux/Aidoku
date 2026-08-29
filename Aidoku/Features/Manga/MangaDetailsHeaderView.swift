@@ -49,6 +49,14 @@ struct MangaDetailsHeaderView: View {
     @State private var isTracking = false
     @State private var hasAvailableTrackers = false
     @State private var showLibraryRemoveConfirm = false
+    @State private var picaFavouriteLoading = false
+    @State private var picaFavouriteOverride: Bool?
+    @State private var picaFavouriteError = ""
+    @State private var showPicaFavouriteError = false
+    @State private var ehentaiFavouriteLoading = false
+    @State private var ehentaiFavouriteState: Bool?
+    @State private var ehentaiFavouriteError = ""
+    @State private var showEHentaiFavouriteError = false
 
     static let coverWidth: CGFloat = 114
 
@@ -135,51 +143,61 @@ struct MangaDetailsHeaderView: View {
                         .padding(.bottom, 4)
 
                     if let authors = manga.authors, !authors.isEmpty {
-                        let label = Text(authors.joined(separator: ", "))
-                            .lineLimit(1)
-                            .foregroundStyle(.secondary)
-                            .font(.callout)
-                            .padding(.bottom, 6)
-                            .textSelection(.enabled)
-                            .transition(.opacity)
-
-                        if let source, source.supportsAuthorSearch {
-                            Button {
-                                // we'll need a better ui in the future for different author selection
-                                guard let author = authors.first else { return }
-
-                                let viewController = MangaListViewController(source: source, title: author)
-                                viewController.getEntries = { page in
-                                    try await source.getSearchMangaList(query: nil, page: page, filters: [
-                                        .text(id: "author", value: author)
-                                    ])
-                                }
-                                path.push(viewController)
-                            } label: {
-                                label
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(authors, id: \.self) { author in
+                                authorView(author)
                             }
-                            .buttonStyle(.borderless)
-                        } else {
-                            label
                         }
+                        .padding(.bottom, 6)
+                        .transition(.opacity)
                     }
 
                     labelsView
 
                     buttonsView
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(height: 174)
+            .frame(minHeight: 174)
             .padding(.bottom, 14)
             .padding(.horizontal, 20)
 
             if let description = manga.description, !description.isEmpty {
-                ExpandableTextView(text: description, expanded: $descriptionExpanded)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, 12)
-                    .padding(.horizontal, 20)
-                    .foregroundStyle(.secondary)
+                if isPicaSource, let metadata = PicaDetailMetadata(description: description) {
+                    if let summary = metadata.summary {
+                        Text(summary)
+                            .lineLimit(descriptionExpanded ? nil : 4)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                            .foregroundStyle(.secondary)
+                            .font(.subheadline)
+                            .padding(.bottom, 6)
+                            .padding(.horizontal, 20)
+                    }
+                    if descriptionExpanded {
+                        picaMetadataView(metadata)
+                    } else {
+                        HStack {
+                            Spacer()
+                            Button(NSLocalizedString("MORE")) {
+                                descriptionExpanded = true
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.tint)
+                            .font(.system(size: 12))
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+                    }
+                } else {
+                    ExpandableTextView(text: description, expanded: $descriptionExpanded)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 12)
+                        .padding(.horizontal, 20)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             tagsView
@@ -232,6 +250,10 @@ struct MangaDetailsHeaderView: View {
         .onChange(of: manga) { _ in
             animationTrigger.toggle()
         }
+        .onChange(of: manga.key) { _ in
+            picaFavouriteOverride = nil
+            ehentaiFavouriteState = nil
+        }
         .onChange(of: nextChapter) { _ in
             updateReadButtonText()
         }
@@ -250,10 +272,85 @@ struct MangaDetailsHeaderView: View {
         .onReceive(NotificationCenter.default.publisher(for: .updateTrackers)) { _ in
             isTracking = TrackerManager.shared.isTracking(mangaId: manga.identifier)
         }
-        .task {
+        .task(id: "\(manga.sourceKey)|\(manga.key)|\(source != nil)|\(initialDataLoaded)") {
             updateReadButtonText()
             hasAvailableTrackers = await TrackerManager.shared.hasAvailableTrackers(mangaId: manga.identifier)
+            if isEHentaiSource, initialDataLoaded {
+                if let detailState = ehentaiFavouriteStateFromDetails {
+                    ehentaiFavouriteState = detailState
+                } else {
+                    await refreshEHentaiFavouriteState()
+                }
+            }
         }
+    }
+
+    @ViewBuilder
+    func authorView(_ author: String) -> some View {
+        let label = Text(author)
+            .lineLimit(2)
+            .foregroundStyle(isPicaSource ? Color.accentColor : Color.secondary)
+            .font(.callout)
+
+        if let source, isPicaSource || source.supportsAuthorSearch {
+            Button {
+                openAuthorSearch(author, source: source)
+            } label: {
+                label
+            }
+            .buttonStyle(.borderless)
+            .contextMenu {
+                Button(NSLocalizedString("COPY")) {
+                    UIPasteboard.general.string = author
+                }
+            }
+        } else {
+            label.contextMenu {
+                Button(NSLocalizedString("COPY")) {
+                    UIPasteboard.general.string = author
+                }
+            }
+        }
+    }
+
+    func openAuthorSearch(_ author: String, source: AidokuRunner.Source) {
+        let viewController = MangaListViewController(source: source, title: author)
+        viewController.getEntries = { page in
+            if source.id == PicaDetailMetadata.sourceKey || source.key == PicaDetailMetadata.sourceKey {
+                try await source.getSearchMangaList(query: author, page: page, filters: [])
+            } else {
+                try await source.getSearchMangaList(query: nil, page: page, filters: [
+                    .text(id: "author", value: author)
+                ])
+            }
+        }
+        path.push(viewController)
+    }
+
+    @ViewBuilder
+    private func picaMetadataView(_ metadata: PicaDetailMetadata) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(metadata.rows.enumerated()), id: \.offset) { _, row in
+                let value = if row.label == "哔咔收藏", let picaFavouriteOverride {
+                    picaFavouriteOverride ? "已收藏" : "未收藏"
+                } else {
+                    row.value
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(row.label)：")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                    Text(value)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 14)
     }
 
     @ViewBuilder
@@ -371,6 +468,44 @@ struct MangaDetailsHeaderView: View {
                     Text(NSLocalizedString("LINK_COPIED_TEXT"))
                 }
             }
+
+            if isPicaSource, source != nil {
+                Button {
+                    Task { await togglePicaFavourite() }
+                } label: {
+                    if picaFavouriteLoading {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: picaFavouriteState ? "heart.fill" : "heart")
+                    }
+                }
+                .buttonStyle(MangaActionButtonStyle(selected: picaFavouriteState))
+                .disabled(picaFavouriteLoading || !initialDataLoaded)
+                .alert("哔咔收藏", isPresented: $showPicaFavouriteError) {
+                    Button(NSLocalizedString("OK"), role: .cancel) {}
+                } message: {
+                    Text(picaFavouriteError)
+                }
+            }
+
+            if isEHentaiSource, source != nil {
+                Button {
+                    Task { await toggleEHentaiFavourite() }
+                } label: {
+                    if ehentaiFavouriteLoading {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: ehentaiFavouriteState == true ? "heart.fill" : "heart")
+                    }
+                }
+                .buttonStyle(MangaActionButtonStyle(selected: ehentaiFavouriteState == true))
+                .disabled(ehentaiFavouriteLoading || !initialDataLoaded)
+                .alert("E-Hentai 收藏", isPresented: $showEHentaiFavouriteError) {
+                    Button(NSLocalizedString("OK"), role: .cancel) {}
+                } message: {
+                    Text(ehentaiFavouriteError)
+                }
+            }
         }
     }
 
@@ -401,6 +536,158 @@ struct MangaDetailsHeaderView: View {
                 .padding(.horizontal, 20)
             }
             .padding(.bottom, 16)
+        }
+    }
+
+    var picaFavouriteState: Bool {
+        if let picaFavouriteOverride { return picaFavouriteOverride }
+        guard
+            let description = manga.description,
+            let metadata = PicaDetailMetadata(description: description),
+            let value = metadata.rows.first(where: { $0.label == "哔咔收藏" })?.value
+        else { return false }
+        return value == "已收藏"
+    }
+
+    var isPicaSource: Bool {
+        source?.id == PicaDetailMetadata.sourceKey
+            || source?.key == PicaDetailMetadata.sourceKey
+            || manga.sourceKey == PicaDetailMetadata.sourceKey
+    }
+
+    var isEHentaiSource: Bool {
+        let sourceKey = "multi.ehentai"
+        return source?.id == sourceKey || source?.key == sourceKey || manga.sourceKey == sourceKey
+    }
+
+    var ehentaiFavouriteStateFromDetails: Bool? {
+        guard let description = manga.description else { return nil }
+        let prefix = "Account Favorite:"
+        guard let line = description
+            .split(separator: "\n")
+            .map({ String($0).trimmingCharacters(in: .whitespaces) })
+            .first(where: { $0.hasPrefix(prefix) })
+        else { return nil }
+
+        switch String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces) {
+            case "Favorited": return true
+            case "Not Favorited": return false
+            default: return nil
+        }
+    }
+
+    @MainActor
+    func refreshEHentaiFavouriteState(showError: Bool = false) async {
+        guard !ehentaiFavouriteLoading else { return }
+        ehentaiFavouriteLoading = true
+        defer { ehentaiFavouriteLoading = false }
+        do {
+            ehentaiFavouriteState = try await performEHentaiFavouriteNotification(
+                "ehentai.favourite.status:\(manga.key)"
+            )
+        } catch {
+            ehentaiFavouriteState = nil
+            if showError {
+                ehentaiFavouriteError = error.localizedDescription
+                showEHentaiFavouriteError = true
+            }
+        }
+    }
+
+    @MainActor
+    func toggleEHentaiFavourite() async {
+        guard !ehentaiFavouriteLoading else { return }
+        ehentaiFavouriteLoading = true
+        defer { ehentaiFavouriteLoading = false }
+        do {
+            let currentState: Bool
+            if let ehentaiFavouriteState {
+                currentState = ehentaiFavouriteState
+            } else {
+                currentState = try await performEHentaiFavouriteNotification(
+                    "ehentai.favourite.status:\(manga.key)"
+                )
+            }
+            let action = currentState ? "remove" : "add"
+            ehentaiFavouriteState = try await performEHentaiFavouriteNotification(
+                "ehentai.favourite.set:\(action):\(manga.key)"
+            )
+        } catch {
+            ehentaiFavouriteError = error.localizedDescription
+            showEHentaiFavouriteError = true
+        }
+    }
+
+    @MainActor
+    func performEHentaiFavouriteNotification(_ notification: String) async throws -> Bool {
+        let sourceKey = "multi.ehentai"
+        guard let source, source.id == sourceKey || source.key == sourceKey else {
+            throw EHentaiFavouriteError.invalidSource
+        }
+        let mangaId = manga.key
+        let resultKey = "\(sourceKey).favouriteActionResult"
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: resultKey)
+        defer { defaults.removeObject(forKey: resultKey) }
+
+        try await source.handleNotification(notification: notification)
+        guard let result = defaults.string(forKey: resultKey) else {
+            throw EHentaiFavouriteError.missingResult
+        }
+        let fields = result.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
+        guard fields.count == 3, String(fields[1]) == mangaId else {
+            throw EHentaiFavouriteError.invalidResult
+        }
+        if fields[0] == "error" { throw EHentaiFavouriteError.remote(String(fields[2])) }
+        switch fields[2] {
+            case "favourite": return true
+            case "un_favourite": return false
+            default: throw EHentaiFavouriteError.invalidResult
+        }
+    }
+
+    @MainActor
+    func togglePicaFavourite() async {
+        guard
+            let source,
+            source.id == PicaDetailMetadata.sourceKey || source.key == PicaDetailMetadata.sourceKey
+        else { return }
+        let mangaId = manga.key
+        let resultKey = "\(PicaDetailMetadata.sourceKey).favouriteActionResult"
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: resultKey)
+        picaFavouriteLoading = true
+        defer {
+            picaFavouriteLoading = false
+            defaults.removeObject(forKey: resultKey)
+        }
+
+        do {
+            try await source.handleNotification(notification: "pica.favourite.toggle:\(mangaId)")
+            guard let result = defaults.string(forKey: resultKey) else {
+                throw PicaFavouriteError.missingResult
+            }
+            let fields = result.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
+            guard fields.count == 3, String(fields[1]) == mangaId else {
+                throw PicaFavouriteError.invalidResult
+            }
+            if fields[0] == "error" { throw PicaFavouriteError.remote(String(fields[2])) }
+            switch fields[2] {
+                case "favourite": picaFavouriteOverride = true
+                case "un_favourite": picaFavouriteOverride = false
+                default: throw PicaFavouriteError.invalidResult
+            }
+
+            if let updatedManga = try? await source.getMangaUpdate(
+                manga: manga,
+                needsDetails: true,
+                needsChapters: false
+            ) {
+                manga = updatedManga
+            }
+        } catch {
+            picaFavouriteError = error.localizedDescription
+            showPicaFavouriteError = true
         }
     }
 
@@ -493,6 +780,66 @@ struct LabelView: View {
             .padding(.horizontal, 8)
             .background(background)
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+}
+
+private struct PicaDetailMetadata {
+    static let sourceKey = "zh.picacomic"
+    private static let marker = "──── 漫画信息 ────"
+
+    struct Row: Hashable {
+        let label: String
+        let value: String
+    }
+
+    let summary: String?
+    let rows: [Row]
+
+    init?(description: String) {
+        guard let markerRange = description.range(of: Self.marker) else { return nil }
+        let summary = String(description[..<markerRange.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        self.summary = summary.isEmpty ? nil : summary
+        rows = description[markerRange.upperBound...]
+            .split(whereSeparator: { $0.isNewline })
+            .compactMap { line in
+                let line = String(line).trimmingCharacters(in: .whitespaces)
+                guard !line.isEmpty, let separator = line.firstIndex(of: "：") else { return nil }
+                let label = line[..<separator].trimmingCharacters(in: .whitespaces)
+                let value = line[line.index(after: separator)...].trimmingCharacters(in: .whitespaces)
+                guard !label.isEmpty, !value.isEmpty else { return nil }
+                return Row(label: label, value: value)
+            }
+    }
+}
+
+private enum PicaFavouriteError: LocalizedError {
+    case missingResult
+    case invalidResult
+    case remote(String)
+
+    var errorDescription: String? {
+        switch self {
+            case .missingResult: "没有收到哔咔收藏操作结果。"
+            case .invalidResult: "哔咔收藏返回了无法识别的状态。"
+            case .remote(let message): "哔咔收藏操作失败：\(message)"
+        }
+    }
+}
+
+private enum EHentaiFavouriteError: LocalizedError {
+    case invalidSource
+    case missingResult
+    case invalidResult
+    case remote(String)
+
+    var errorDescription: String? {
+        switch self {
+            case .invalidSource: "当前来源不是 E-Hentai。"
+            case .missingResult: "没有收到 E-Hentai 收藏操作结果。"
+            case .invalidResult: "E-Hentai 收藏返回了无法识别的状态。"
+            case .remote(let message): "E-Hentai 收藏操作失败：\(message)"
+        }
     }
 }
 

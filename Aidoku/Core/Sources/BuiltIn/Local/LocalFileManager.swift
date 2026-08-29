@@ -17,7 +17,7 @@ actor LocalFileManager {
     private var lastScanTime = Date.distantPast
     private var scanTask: Task<Void, Never>?
 
-    static let allowedFileExtensions = Set(["cbz", "zip", "epub"])
+    static let allowedFileExtensions = Set(["cbz", "zip", "epub", "txt"])
     static let allowedImageExtensions = Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "avif"])
     static let allowedTextExtensions = Set(["txt", "md"])
     static let allowedPageExtensions = allowedImageExtensions.union(allowedTextExtensions)
@@ -40,6 +40,14 @@ actor LocalFileManager {
 }
 
 extension LocalFileManager {
+    func analyzeTxt(url: URL, options: TxtImportOptions) throws -> TxtAnalysis {
+        let accessGranted = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessGranted { url.stopAccessingSecurityScopedResource() }
+        }
+        return try TxtParser.analyze(url: url, options: options)
+    }
+
     // get info about a file to be imported
     func loadImportFileInfo(url: URL) -> ImportFileInfo? {
         // if the given url comes from an imported file that isn't copied, we need to do this
@@ -52,6 +60,21 @@ extension LocalFileManager {
         let pathExtension = url.pathExtension.lowercased()
         guard Self.allowedFileExtensions.contains(pathExtension) else {
             return nil
+        }
+
+        if pathExtension == "txt" {
+            guard let analysis = try? TxtParser.analyze(url: url) else {
+                return nil
+            }
+            return ImportFileInfo(
+                url: url,
+                previewImages: [],
+                name: url.lastPathComponent,
+                pageCount: analysis.index.chapters.count,
+                fileType: .txt,
+                comicInfo: nil,
+                txtAnalysis: analysis
+            )
         }
 
         if pathExtension == "epub" {
@@ -146,10 +169,24 @@ extension LocalFileManager {
 
         let documentsDir = FileManager.default.documentDirectory
         let archiveURL = documentsDir.appendingPathComponent(cbzPath)
-        if archiveURL.pathExtension.lowercased() == "epub" {
-            return readEpubPages(from: archiveURL, chapterId: chapterId)
+        switch archiveURL.pathExtension.lowercased() {
+            case "epub":
+                return readEpubPages(from: archiveURL, chapterId: chapterId)
+            case "txt":
+                return readTxtPages(from: archiveURL, chapterId: chapterId)
+            default:
+                return readPages(from: archiveURL)
         }
-        return readPages(from: archiveURL)
+    }
+
+    nonisolated func readTxtPages(from textURL: URL, chapterId: String) -> [AidokuRunner.Page] {
+        do {
+            let text = try TxtParser.readChapter(from: textURL, chapterId: chapterId)
+            return [AidokuRunner.Page(content: .text(text))]
+        } catch {
+            LogManager.logger.error("Failed to read TXT chapter \(chapterId): \(error)")
+            return []
+        }
     }
 
     // read the pages for an epub chapter
@@ -317,7 +354,8 @@ extension LocalFileManager {
         mangaDescription: String? = nil,
         chapterName: String? = nil,
         volume: Float? = nil,
-        chapter: Float? = nil
+        chapter: Float? = nil,
+        txtOptions: TxtImportOptions? = nil
     ) async throws(LocalFileManagerError) {
         // disable file listener while we make changes to the disk
         self.suppressFileEvents = true
@@ -356,6 +394,20 @@ extension LocalFileManager {
             if shouldRemoveUrl {
                 try? FileManager.default.removeItem(at: url)
             }
+        }
+
+        // Text files create a chapter per detected heading and share one UTF-8 file.
+        if url.pathExtension.lowercased() == "txt" {
+            try await uploadTxt(
+                from: url,
+                skipUpload: skipUpload,
+                mangaId: mangaId,
+                mangaCoverImage: mangaCoverImage,
+                mangaName: mangaName,
+                mangaDescription: mangaDescription,
+                options: txtOptions
+            )
+            return
         }
 
         // epub files create a chapter per spine item instead of image pages
@@ -648,6 +700,136 @@ extension LocalFileManager {
             )
         }
     }
+
+    // Add a standalone TXT file as a local title. The library copy is normalized
+    // to UTF-8 so chapters can be read by byte range without decoding the whole book.
+    // swiftlint:disable:next function_parameter_count
+    private func uploadTxt(
+        from url: URL,
+        skipUpload: Bool,
+        mangaId: String?,
+        mangaCoverImage: PlatformImage?,
+        mangaName: String?,
+        mangaDescription: String?,
+        options: TxtImportOptions?
+    ) async throws(LocalFileManagerError) {
+        let prepared: TxtPreparedDocument
+        do {
+            if skipUpload,
+               let normalizedData = try? Data(contentsOf: url, options: .mappedIfSafe),
+               let existingIndex = TxtChapterIndex.load(for: url),
+               TxtChapterIndex.isUsable(existingIndex, for: normalizedData),
+               let text = String(data: normalizedData, encoding: .utf8)
+            {
+                prepared = TxtPreparedDocument(
+                    normalizedData: normalizedData,
+                    analysis: TxtAnalysis(
+                        encoding: existingIndex.originalEncoding,
+                        preview: String(text.prefix(TxtParser.previewCharacterCount)),
+                        index: existingIndex
+                    )
+                )
+            } else {
+                let resolvedOptions = options ?? TxtImportOptions(
+                    encoding: TxtParser.detectEncoding(data: (try? Data(contentsOf: url, options: .mappedIfSafe)) ?? Data()),
+                    splitsChapters: true,
+                    customChapterPattern: nil
+                )
+                prepared = try TxtParser.prepare(url: url, options: resolvedOptions)
+            }
+        } catch TxtParserError.invalidChapterPattern {
+            throw LocalFileManagerError.invalidChapterPattern
+        } catch TxtParserError.chapterLimitExceeded {
+            throw LocalFileManagerError.tooManyChapters
+        } catch {
+            throw LocalFileManagerError.cannotReadText
+        }
+
+        let resolvedMangaId = (mangaId ?? mangaName ?? url.deletingPathExtension().lastPathComponent).normalized
+        let mangaTitle = mangaName ?? url.deletingPathExtension().lastPathComponent
+        let fileManager = FileManager.default
+        let localFolder = fileManager.documentDirectory.appendingPathComponent("Local", isDirectory: true)
+        localFolder.createDirectory()
+        let mangaFolder = localFolder.appendingPathComponent(resolvedMangaId, isDirectory: true)
+        mangaFolder.createDirectory()
+
+        let destURL: URL
+        if skipUpload {
+            destURL = url
+            // Rebuild a missing/stale sidecar during a folder scan. The file
+            // may still be stored in its original encoding (for example when
+            // it was copied by an older build), so persist the normalized
+            // UTF-8 bytes before saving offsets into it.
+            do {
+                let currentData = try Data(contentsOf: destURL, options: .mappedIfSafe)
+                if currentData != prepared.normalizedData {
+                    try prepared.normalizedData.write(to: destURL, options: .atomic)
+                }
+                try prepared.analysis.index.save(for: destURL)
+            } catch {
+                try? fileManager.removeItem(at: TxtChapterIndex.url(for: destURL))
+                throw LocalFileManagerError.fileCopyFailed
+            }
+        } else {
+            var candidate = mangaFolder.appendingPathComponent(url.lastPathComponent)
+            var counter = 1
+            while candidate.exists {
+                let name = url.lastPathComponent.removingExtension() + " (\(counter)).txt"
+                candidate = mangaFolder.appendingPathComponent(name)
+                counter += 1
+            }
+            destURL = candidate
+            do {
+                try prepared.normalizedData.write(to: destURL, options: .atomic)
+                try prepared.analysis.index.save(for: destURL)
+            } catch {
+                try? fileManager.removeItem(at: destURL)
+                try? fileManager.removeItem(at: TxtChapterIndex.url(for: destURL))
+                throw LocalFileManagerError.fileCopyFailed
+            }
+        }
+
+        var coverURL: URL?
+        if let mangaCoverImage {
+            let newCoverURL = mangaFolder.appendingPathComponent("cover.png")
+            do {
+                if newCoverURL.exists {
+                    try fileManager.removeItem(at: newCoverURL)
+                }
+                try mangaCoverImage.pngData()?.write(to: newCoverURL)
+                coverURL = newCoverURL
+            } catch {
+                throw LocalFileManagerError.fileCopyFailed
+            }
+        }
+
+        let hasMangaObject = if let mangaId {
+            await LocalFileDataManager.shared.hasSeries(id: mangaId)
+        } else {
+            false
+        }
+        if !hasMangaObject {
+            await LocalFileDataManager.shared.createManga(
+                url: mangaFolder,
+                id: resolvedMangaId,
+                title: mangaTitle,
+                cover: coverURL?.toAidokuImageUrl()?.absoluteString,
+                description: mangaDescription,
+                viewer: .leftToRight
+            )
+        }
+
+        let fileName = destURL.lastPathComponent
+        for (index, textChapter) in prepared.analysis.index.chapters.enumerated() {
+            await LocalFileDataManager.shared.createChapter(
+                mangaId: resolvedMangaId,
+                url: destURL,
+                id: "\(fileName)/\(textChapter.id)",
+                title: textChapter.title,
+                chapter: Float(index + 1)
+            )
+        }
+    }
 }
 
 extension LocalFileManager {
@@ -700,6 +882,7 @@ extension LocalFileManager {
         if fileURL.exists {
             try? FileManager.default.removeItem(at: fileURL)
         }
+        Self.removeTxtIndex(for: fileURL)
         Self.removeEpubImageCache(for: fileURL)
     }
 
@@ -718,6 +901,7 @@ extension LocalFileManager {
             if fileURL.exists {
                 try? FileManager.default.removeItem(at: fileURL)
             }
+            Self.removeTxtIndex(for: fileURL)
             Self.removeEpubImageCache(for: fileURL)
         }
 
@@ -733,6 +917,11 @@ extension LocalFileManager {
               let bookDir = epubImageCacheDirectory(for: archiveURL)
         else { return }
         try? FileManager.default.removeItem(at: bookDir)
+    }
+
+    nonisolated static func removeTxtIndex(for textURL: URL) {
+        guard textURL.pathExtension.lowercased() == "txt" else { return }
+        try? FileManager.default.removeItem(at: TxtChapterIndex.url(for: textURL))
     }
 
     // remove all local source files and db objects
@@ -801,8 +990,8 @@ extension LocalFileManager {
             for folder in mangaFolders {
                 let mangaId = folder.lastPathComponent.normalized
 
-                // find cbz files in this folder
-                let cbzFiles = folder.contents
+                // find supported local files in this folder
+                let localFiles = folder.contents
                     .filter {
                         Self.allowedFileExtensions.contains($0.pathExtension.lowercased())
                     }
@@ -812,30 +1001,30 @@ extension LocalFileManager {
 
                 // add manga to db that exist on disk but not in db yet
                 if toAdd.contains(mangaId) {
-                    // add cbz files as chapters
-                    for cbzFile in cbzFiles {
+                    // add local files as chapters
+                    for localFile in localFiles {
                         do {
-                            try await uploadFile(from: cbzFile, skipUpload: true, mangaId: mangaId)
+                            try await uploadFile(from: localFile, skipUpload: true, mangaId: mangaId)
                         } catch {
-                            LogManager.logger.error("Failed to process file \(cbzFile.lastPathComponent) for new manga \(mangaId): \(error)")
+                            LogManager.logger.error("Failed to process file \(localFile.lastPathComponent) for new manga \(mangaId): \(error)")
                         }
                     }
                 } else {
                     // add missing chapters
-                    let cbzFileNames = Set(cbzFiles.map { $0.lastPathComponent })
+                    let localFileNames = Set(localFiles.map { $0.lastPathComponent })
 
                     let dbChapterFileNames = await LocalFileDataManager.shared.removeMissingChapters(
                         mangaId: mangaId,
-                        availableChapters: cbzFileNames
+                        availableChapters: localFileNames
                     )
 
-                    // add chapters for new cbz files
-                    let chaptersToAdd = cbzFiles.filter { !dbChapterFileNames.contains($0.lastPathComponent) }
-                    for cbzFile in chaptersToAdd {
+                    // add chapters for new local files
+                    let filesToAdd = localFiles.filter { !dbChapterFileNames.contains($0.lastPathComponent) }
+                    for localFile in filesToAdd {
                         do {
-                            try await uploadFile(from: cbzFile, skipUpload: true, mangaId: mangaId)
+                            try await uploadFile(from: localFile, skipUpload: true, mangaId: mangaId)
                         } catch {
-                            LogManager.logger.error("Failed to process file \(cbzFile.lastPathComponent) for manga \(mangaId): \(error)")
+                            LogManager.logger.error("Failed to process file \(localFile.lastPathComponent) for manga \(mangaId): \(error)")
                         }
                     }
                 }
