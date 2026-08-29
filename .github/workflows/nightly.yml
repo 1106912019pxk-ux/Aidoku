@@ -1,6 +1,10 @@
 name: Build and upload nightly ipa
 
-on: workflow_dispatch
+on:
+  push:
+    branches:
+      - integration/legacy-capability-migration
+  workflow_dispatch:
 
 jobs:
   build:
