@@ -11,6 +11,7 @@ import AidokuRunner
 import Combine
 import CryptoKit
 import MediaPlayer
+import SwiftUI
 import UIKit
 import ZIPFoundation
 
@@ -629,19 +630,19 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         synthesisTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let data = if
-                    let prefetched = prefetchedAudio.removeValue(forKey: unitIndex),
-                    prefetched.cacheKey == cacheKey {
-                    prefetched.data
+                let data: Data
+                if let prefetched = prefetchedAudio.removeValue(forKey: unitIndex),
+                   prefetched.cacheKey == cacheKey {
+                    data = prefetched.data
                 } else if let cached = audioCache[cacheKey] {
-                    cached
+                    data = cached
                 } else {
                     prefetchTask?.cancel()
                     prefetchTask = nil
                     let generated = try await engine.synthesize(.init(text: unit.text, rate: settings.rate))
                     guard !Task.isCancelled else { return }
                     audioCache[cacheKey] = generated
-                    generated
+                    data = generated
                 }
                 guard !Task.isCancelled else { return }
                 try beginPlayback(data: data)
