@@ -2,7 +2,7 @@
 
 - 任务 ID：legacy-capability-migration-20260828
 - 类型：功能实现 / 审查交接
-- 状态：代码迁移完成，待编译与验收
+- 状态：代码迁移与云端 archive/IPA 完成，待自动测试与真机验收
 - 当前分支：integration/legacy-capability-migration
 
 ## 用户最终得到的结果
@@ -40,7 +40,7 @@
 - 必须保持不变：现有书库、阅读历史和进度含义；官方来源/插件兼容；公开仓库不得包含凭据、测试书籍、模型或构建产物。
 - 已确认的隐私和产品决定：Microsoft 在线朗读为默认引擎，不增加首次确认弹窗；界面简要说明正文会发送到 Microsoft；Apple 系统 TTS 作为失败降级和可选引擎。
 - 需要用户决定：新增付费服务、生产依赖、持久数据迁移或新的插件协议时另行确认；当前没有。
-- 尚未授权的外部或破坏性操作：推送后续迁移提交、创建/合并 PR、触发 Actions、archive、IPA 和发布均未授权。
+- 外部操作边界：本轮已授权并完成迁移分支推送与一次成功的 archive/IPA；创建/合并 PR、合入 `main`、发布和后续打包仍需单独授权。
 
 ## 相关上下文
 
@@ -78,19 +78,21 @@
 - 2026-08-30：打包前独立完整性复核发现旧版“阅读设置中选择速度并启动自动阅读”的入口未迁入；已恢复该入口，并修正独立会话被全局自动滚动开关误停的问题。
 - 2026-08-29：完成 PICA/E-Hentai 宿主适配迁移：PICA 专用线路接入 Runner、Nuke 和下载器；详情页远端收藏、元数据/作者交互、分类屏蔽/空页分页，以及 E-Hentai 账户收藏均按来源键限定。
 - 2026-08-29：生成 `docs/LEGACY_MIGRATION_AUDIT.md`，逐项记录旧证据、新位置、冲突处理、验证和显式排除项。
-- 当前步骤：77 个旧提交的最终行为复核与代码迁移已完成；等待单独授权后在 macOS CI 做非打包编译和测试，根据编译证据修正类型/并发问题。
+- 2026-08-30：独立静态复核后触发 macOS 26 / Xcode 26.6 archive。前三次构建依次暴露 `ReaderSpeech.swift` 缺少 SwiftUI 导入、`if` 表达式内提前返回、错误描述 getter 缺少显式返回；均按日志做最小等价修复。第 4 次运行 `33265963550` 在提交 `140cce2b` 上通过 Build、Package ipa 和 Upload artifacts。
+- 2026-08-30：成功产物为 `Aidoku-iOS_nightly-140cce2.ipa`（artifact ID `9718720054`，GitHub 显示 11.2 MB，SHA-256 `9da1d8918dcf3acbaa19613982223528bfb51d89bf2c9902ee297734d60ee2cc`）。受当前 CLI Token/浏览器下载路径限制，尚未完成本地解包复核。
+- 当前步骤：迁移代码已经通过 Release archive 和无签名 IPA 生成；下一步是补跑可用的自动测试，并在 iPhone 17、iPad Air 4 做一次集中高价值验收。
 
 ## 验证证据
 
-- 自动检查及结果：`git diff --check` 通过；`pwsh -NoProfile -File scripts/check-git-ownership.ps1` 通过且仓库所有者为 `AMADEUS\Lain`；36 个受影响 Swift 文件通过括号、尾随空白和冲突标记扫描；20 项能力入口契约扫描通过；plist XML、后台 `audio` 唯一声明、自动阅读/朗读本地化键唯一性均通过；未跟踪文件名未发现 IPA、签名或凭据；Windows 无 Swift/Xcode/SwiftLint，编译与 Swift Testing 待 macOS CI。
+- 自动检查及结果：`git diff --check` 通过；`pwsh -NoProfile -File scripts/check-git-ownership.ps1` 通过且仓库所有者为 `AMADEUS\Lain`；36 个受影响 Swift 文件通过括号、尾随空白和冲突标记扫描；20 项能力入口契约扫描通过；plist XML、后台 `audio` 唯一声明、自动阅读/朗读本地化键唯一性均通过；未跟踪文件名未发现 IPA、签名或凭据。GitHub Actions 运行 `33265963550` 已通过 Xcode 26.6 Release archive、IPA 压缩和 artifact 上传。
 - 人工验收：待最终集中验收。
-- 尚未验证：Swift 编译、XCTest、Xcode archive、IPA、iPhone 与 iPad 行为。
+- 尚未验证：Swift Testing/XCTest、SwiftLint、成功 artifact 的本地解包、iPhone 与 iPad 行为。
 
 ## 交接
 
 - 已改变的行为：文字阅读设置增加字体导入、独立上下边距、段距、首行缩进和背景主题；分页与滚动渲染共用字体解析规则；TXT 可以预览并按章节导入，重启扫描能恢复目录和内容；滚动文字阅读器可以使用统一的自动阅读按钮；文字阅读器可以打开朗读控制，默认使用微软在线语音，失败时降级到 Apple 系统语音。
 - 修改的文件或模块：ReaderSettingsView、TextReaderFontStore、TextReaderPreferences、TextPaginator、分页/滚动文字阅读器、ReaderReaderDelegate、ReaderViewController、ReaderSpeech、WebtoonReader、MarkdownView、本地文件管理、TXT 解析器、PicaNetworkRouting、AidokuRunner 请求入口、Nuke/下载器、MangaDetailsHeaderView、来源 Home/筛选分页、LibraryViewController、Info.plist、本地化和聚焦测试。
-- 已知限制：Windows 无法本地编译 iOS 工程；朗读尚未在 macOS 或真机验证 WebSocket 服务、锁屏控制和跨章节定位；PICA/E-Hentai 收藏需要配套定制 AIX。
-- 当前 Git 状态：本地迁移分支，尚未提交和推送。
-- 推荐下一步：单独授权后先做一次不打包的 macOS 云端编译与测试，修正 Swift 类型/并发问题；通过后再集中生成一次 IPA 做双设备验收。
+- 已知限制：Windows 无法本地运行 iOS 工程；朗读尚未在真机验证 WebSocket 服务、锁屏控制和跨章节定位；PICA/E-Hentai 收藏需要配套定制 AIX；当前 IPA 是无签名云端产物。
+- 当前 Git 状态：迁移分支已提交并推送到 `origin/integration/legacy-capability-migration`；尚未合入 `main`。
+- 推荐下一步：先补跑无需额外打包的自动测试；随后集中使用当前成功 IPA 在 iPhone 17 和 iPad Air 4 验收核心阅读、TXT、自动阅读、TTS 与定制来源链路。
 - 新对话必读文件：本任务卡、`docs/LEGACY_CAPABILITY_MATRIX.md`、`docs/ARCHITECTURE.md`。
