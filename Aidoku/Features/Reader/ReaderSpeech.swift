@@ -353,17 +353,17 @@ enum ReaderSpeechError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
             case .invalidResponse:
-                readerSpeechLocalized("MICROSOFT_TTS_INVALID_RESPONSE", fallback: "Microsoft returned invalid audio.")
+                return readerSpeechLocalized("MICROSOFT_TTS_INVALID_RESPONSE", fallback: "Microsoft returned invalid audio.")
             case .playbackFailed:
-                readerSpeechLocalized("MICROSOFT_TTS_PLAYBACK_FAILED", fallback: "Speech playback failed.")
+                return readerSpeechLocalized("MICROSOFT_TTS_PLAYBACK_FAILED", fallback: "Speech playback failed.")
             case .systemVoiceUnavailable:
-                readerSpeechLocalized("READER_TTS_SYSTEM_UNAVAILABLE", fallback: "No usable system voice is installed.")
+                return readerSpeechLocalized("READER_TTS_SYSTEM_UNAVAILABLE", fallback: "No usable system voice is installed.")
             case let .freeServiceUnavailable(detail):
                 let message = readerSpeechLocalized(
                     "MICROSOFT_TTS_FREE_UNAVAILABLE",
                     fallback: "Microsoft online speech is temporarily unavailable."
                 )
-                detail?.isEmpty == false ? "\(message) (\(detail!))" : message
+                return detail?.isEmpty == false ? "\(message) (\(detail!))" : message
         }
     }
 }
