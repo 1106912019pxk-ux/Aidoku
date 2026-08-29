@@ -21,9 +21,23 @@ jobs:
           xcodebuild -downloadPlatform iOS
       - name: Get commit SHA
         id: commitinfo
-        run: echo "::set-output name=sha_short::$(git rev-parse --short HEAD)"
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
       - name: Build
-        run: xcodebuild -scheme "Aidoku" -configuration Release archive -archivePath build/Aidoku.xcarchive -skipPackagePluginValidation CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+        run: |
+          set +e
+          xcodebuild -scheme "Aidoku" -configuration Release archive \
+            -archivePath build/Aidoku.xcarchive \
+            -skipPackagePluginValidation \
+            CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee xcodebuild.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "::group::Compiler diagnostics"
+            grep -n -E '(^|[[:space:]])(fatal )?error:|BUILD FAILED|ARCHIVE FAILED' xcodebuild.log || true
+            echo "::endgroup::"
+            exit "$status"
+          fi
       - name: Package ipa
         run: |
           mkdir Payload
