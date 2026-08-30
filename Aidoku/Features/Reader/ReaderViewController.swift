@@ -423,8 +423,9 @@ class ReaderViewController: BaseObservingViewController {
             // Only switch if we're currently in a text reader
             if self.reader is ReaderTextViewController || self.reader is ReaderPagedTextViewController {
                 // Save current position before switching so the new reader can restore it
+                let dateRead = Date.now
                 Task {
-                    await self.updateReadPosition()
+                    await self.updateReadPosition(dateRead: dateRead)
                     await MainActor.run {
                         self.setReader(.text)
                         self.reader?.setChapter(self.chapter, startPage: self.currentPage)
@@ -435,8 +436,9 @@ class ReaderViewController: BaseObservingViewController {
         }
         addObserver(forName: UIScene.willDeactivateNotification) { [weak self] _ in
             guard let self else { return }
+            let dateRead = Date.now
             Task {
-                await self.updateReadPosition()
+                await self.updateReadPosition(dateRead: dateRead)
             }
 
             if #available(iOS 26.0, *) {
@@ -506,8 +508,9 @@ class ReaderViewController: BaseObservingViewController {
         }
 
         guard currentPage >= 1 else { return }
+        let dateRead = Date.now
         Task {
-            await updateReadPosition()
+            await updateReadPosition(dateRead: dateRead)
         }
     }
 
@@ -552,7 +555,8 @@ extension ReaderViewController {
     func updateReadPosition(
         currentPage: Int? = nil,
         totalPages: Int? = nil,
-        chapter: AidokuRunner.Chapter? = nil
+        chapter: AidokuRunner.Chapter? = nil,
+        dateRead: Date = .now
     ) async {
         let effectiveTotalPages = totalPages ?? toolbarView.totalPages ?? 0
         let effectiveCurrentPage = currentPage ?? self.currentPage
@@ -587,6 +591,7 @@ extension ReaderViewController {
             progress: currentPage,
             totalPages: totalPages,
             scrollPosition: currentPosition,
+            dateRead: dateRead,
             completed: completed
         )
         await saveReadingSession(chapter: chapter)
@@ -921,8 +926,9 @@ extension ReaderViewController {
         toolbarView.sliderView.isEnabled = false
         dictionaryLongPressGesture?.isEnabled = false
 
+        let dateRead = Date.now
         Task {
-            await updateReadPosition()
+            await updateReadPosition(dateRead: dateRead)
             await MainActor.run {
                 guard self.autoReadingSession != nil else { return }
                 switch content {
@@ -987,8 +993,9 @@ extension ReaderViewController {
         toolbarView.sliderView.isEnabled = !speechController.isActive
         configureDictionaryLookupGesture()
 
+        let dateRead = Date.now
         Task {
-            await updateReadPosition()
+            await updateReadPosition(dateRead: dateRead)
             await MainActor.run {
                 self.temporaryTextReaderStyle = nil
                 self.readingMode = session.originalReadingMode
@@ -1247,8 +1254,14 @@ extension ReaderViewController: ReaderHoldingDelegate {
         let currentPage = currentPage
         let totalPages = toolbarView.totalPages
         let oldChapter = self.chapter
+        let dateRead = Date.now
         Task {
-            await updateReadPosition(currentPage: currentPage, totalPages: totalPages, chapter: oldChapter)
+            await updateReadPosition(
+                currentPage: currentPage,
+                totalPages: totalPages,
+                chapter: oldChapter,
+                dateRead: dateRead
+            )
             sessionReadPages = [self.currentPage]
             sessionStartDate = Date.now
             sessionLastInteraction = nil
@@ -1397,10 +1410,12 @@ extension ReaderViewController: ReaderHoldingDelegate {
     func setCompleted() {
         guard !UserDefaults.standard.bool(forKey: "General.incognitoMode") else { return }
 
+        let dateRead = Date.now
         Task { [chaptersToMark] in
             await HistoryManager.shared.addHistory(
                 mangaId: manga.identifier,
-                chapters: chaptersToMark
+                chapters: chaptersToMark,
+                date: dateRead
             )
         }
 
@@ -1885,6 +1900,28 @@ extension ReaderViewController {
 }
 
 // MARK: - UIGestureRecognizerDelegate
+@MainActor
+enum ReaderTapGesturePolicy {
+    static func allowsSimultaneousTextTap(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard
+            let tap = gestureRecognizer as? UITapGestureRecognizer,
+            tap.numberOfTapsRequired == 1,
+            tap.numberOfTouchesRequired == 1
+        else {
+            return false
+        }
+
+        var view = gestureRecognizer.view
+        while let currentView = view {
+            if let textView = currentView as? UITextView {
+                return textView.isSelectable && textView.isUserInteractionEnabled
+            }
+            view = currentView.superview
+        }
+        return false
+    }
+}
+
 extension ReaderViewController: UIGestureRecognizerDelegate {
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
@@ -1909,6 +1946,27 @@ extension ReaderViewController: UIGestureRecognizerDelegate {
             view = currentView.superview
         }
         return true
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        let textViewGesture: UIGestureRecognizer
+        if gestureRecognizer === barToggleTapGesture {
+            textViewGesture = otherGestureRecognizer
+        } else if otherGestureRecognizer === barToggleTapGesture {
+            textViewGesture = gestureRecognizer
+        } else {
+            return false
+        }
+
+        // A selectable UITextView owns tap recognizers that activate its text
+        // interaction. On a newly displayed page, that recognizer can otherwise
+        // win the first tap and prevent the reader tap-zone recognizer from
+        // turning the page. Only share ordinary taps; long-press selection and
+        // page-view pan gestures keep their normal exclusive behavior.
+        return ReaderTapGesturePolicy.allowsSimultaneousTextTap(textViewGesture)
     }
 }
 

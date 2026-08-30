@@ -51,17 +51,47 @@ import UIKit
         _ = paginator.paginate(markdown: "", pageSize: pageSize)
     }
 
-    @Test("Asymmetric text padding changes the usable page area")
+    @Test("Independent margins add to the existing horizontal padding")
     func asymmetricPaddingChangesContentSize() {
         var config = PaginationConfig()
         config.horizontalPadding = 20
+        config.leftMargin = 12
+        config.rightMargin = 28
         config.topPadding = 30
         config.bottomPadding = 50
 
         let size = TextPaginator(config: config).contentSize(for: pageSize)
 
-        #expect(size.width == 280)
+        #expect(size.width == 240)
         #expect(size.height == 400)
+    }
+
+    @Test("Local TXT chapters use plain-text pagination")
+    func localTxtUsesPlainTextPagination() {
+        #expect(TextContentFormat.forLocalChapter(key: "book.txt/chapter-1") == .plainText)
+        #expect(TextContentFormat.forLocalChapter(key: "book.epub/chapter-1.xhtml") == .markdown)
+        #expect(TextContentFormat.forLocalChapter(key: nil) == .markdown)
+    }
+
+    @Test("Indented TXT body keeps the selected body font")
+    func indentedTxtKeepsSelectedFont() throws {
+        var config = PaginationConfig()
+        config.fontWeight = .medium
+        let text = "章节标题\n\n    中文正文保留行首空格"
+        let pages = TextPaginator(config: config).paginate(
+            markdown: text,
+            pageSize: pageSize,
+            format: .plainText
+        )
+        let page = try #require(pages.first)
+        let bodyLocation = (page.attributedContent.string as NSString).range(of: "中文正文").location
+        try #require(bodyLocation != NSNotFound)
+        let bodyFont = try #require(
+            page.attributedContent.attribute(.font, at: bodyLocation, effectiveRange: nil) as? UIFont
+        )
+
+        #expect(page.attributedContent.string == text)
+        #expect(bodyFont.fontName == config.font.fontName)
     }
 
     @Test("First-line indent is measured in selected-font characters")
@@ -80,5 +110,27 @@ import UIKit
         let family = try #require(UIFont.familyNames.first)
         let resolvedName = try #require(TextReaderFontResolver.resolvedName(for: family))
         #expect(UIFont(name: resolvedName, size: 16) != nil)
+    }
+
+    @Test("Body weight exposes five real settings")
+    func bodyWeightHasFiveLevels() {
+        #expect(TextReaderFontWeight.allCases.map(\.rawValue) == [
+            "light", "regular", "medium", "semibold", "bold"
+        ])
+
+        let regular = TextReaderFontResolver.font(for: "System", size: 16, weight: .regular)
+        let bold = TextReaderFontResolver.font(for: "System", size: 16, weight: .bold)
+        #expect(descriptorWeight(of: bold) > descriptorWeight(of: regular))
+    }
+
+    private func descriptorWeight(of font: UIFont) -> CGFloat {
+        guard
+            let traits = font.fontDescriptor.object(forKey: .traits)
+                as? [UIFontDescriptor.TraitKey: Any],
+            let value = traits[.weight] as? NSNumber
+        else {
+            return UIFont.Weight.regular.rawValue
+        }
+        return CGFloat(truncating: value)
     }
 }

@@ -7,6 +7,29 @@
 
 import CoreData
 
+enum HistoryDuplicateResolver {
+    static func prefersCandidate(
+        completed candidateCompleted: Bool,
+        date candidateDate: Date?,
+        progress candidateProgress: Int16,
+        over existingCompleted: Bool,
+        date existingDate: Date?,
+        progress existingProgress: Int16
+    ) -> Bool {
+        if candidateCompleted != existingCompleted {
+            return candidateCompleted
+        }
+
+        let candidateDate = candidateDate ?? .distantPast
+        let existingDate = existingDate ?? .distantPast
+        if candidateDate != existingDate {
+            return candidateDate > existingDate
+        }
+
+        return candidateProgress > existingProgress
+    }
+}
+
 extension CoreDataManager {
     /// Remove all history objects.
     func clearHistory(context: NSManagedObjectContext) {
@@ -178,17 +201,40 @@ extension CoreDataManager {
             let objects = self.getHistoryForManga(mangaId: mangaId, context: context)
 
             var needsSave = false
-            var historyDict: [String: (page: Int, date: Int)] = [:]
+            var historyByChapterId: [String: HistoryObject] = [:]
 
             let inLibrary = self.hasLibraryManga(mangaId: mangaId, context: context)
 
             for history in objects {
-                // remove duplicate read history objects for the same chapter
-                if historyDict[history.chapterId] != nil {
+                if let existing = historyByChapterId[history.chapterId] {
+                    let candidateWins = HistoryDuplicateResolver.prefersCandidate(
+                        completed: history.completed,
+                        date: history.dateRead,
+                        progress: history.progress,
+                        over: existing.completed,
+                        date: existing.dateRead,
+                        progress: existing.progress
+                    )
+                    let survivor = candidateWins ? history : existing
+                    let duplicate = candidateWins ? existing : history
+
+                    if survivor.chapter == nil {
+                        survivor.chapter = duplicate.chapter
+                    }
+                    if let sessions = duplicate.sessions, sessions.count > 0 {
+                        survivor.addToSessions(sessions)
+                    }
+
+                    historyByChapterId[history.chapterId] = survivor
                     needsSave = true
-                    context.delete(history)
+                    context.delete(duplicate)
                     continue
                 }
+                historyByChapterId[history.chapterId] = history
+            }
+
+            var historyDict: [String: (page: Int, date: Int)] = [:]
+            for history in historyByChapterId.values {
                 // link history to chapter if link is missing
                 if inLibrary && history.chapter == nil {
                     if let chapter = self.getChapter(

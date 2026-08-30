@@ -14,9 +14,12 @@ struct MarkdownView: View {
     @State private var showSafari = false
 
     let fontFamily: String
+    let fontWeight: TextReaderFontWeight
     let fontSize: CGFloat
     let lineSpacing: CGFloat
     let horizontalPadding: CGFloat
+    let leftMargin: CGFloat
+    let rightMargin: CGFloat
     let topPadding: CGFloat
     let bottomPadding: CGFloat
     let paragraphSpacing: CGFloat
@@ -25,9 +28,12 @@ struct MarkdownView: View {
     init(
         _ markdownString: String,
         fontFamily: String = "System",
+        fontWeight: TextReaderFontWeight = .regular,
         fontSize: CGFloat = 18,
         lineSpacing: CGFloat = 8,
         horizontalPadding: CGFloat = 16,
+        leftMargin: CGFloat = 0,
+        rightMargin: CGFloat = 0,
         topPadding: CGFloat = 32,
         bottomPadding: CGFloat = 32,
         paragraphSpacing: CGFloat = 12,
@@ -36,17 +42,39 @@ struct MarkdownView: View {
     ) {
         self.markdownString = Self.indentParagraphs(in: markdownString, by: firstLineIndent)
         self.fontFamily = fontFamily
+        self.fontWeight = fontWeight
         self.fontSize = fontSize
         self.lineSpacing = lineSpacing
         self.horizontalPadding = horizontalPadding
+        self.leftMargin = leftMargin
+        self.rightMargin = rightMargin
         self.topPadding = topPadding
         self.bottomPadding = bottomPadding
         self.paragraphSpacing = paragraphSpacing
         self.theme = theme
     }
 
-    private var resolvedFontFamily: String {
-        TextReaderFontResolver.resolvedName(for: fontFamily) ?? ".AppleSystemUIFont"
+    private var usesSystemFont: Bool {
+        TextReaderFontResolver.resolvedName(for: fontFamily) == nil
+    }
+
+    private var resolvedFontName: String {
+        guard !usesSystemFont else { return ".AppleSystemUIFont" }
+        return TextReaderFontResolver.font(
+            for: fontFamily,
+            size: fontSize,
+            weight: fontWeight
+        ).fontName
+    }
+
+    private var systemFontWeight: Font.Weight {
+        switch fontWeight {
+            case .light: .light
+            case .regular: .regular
+            case .medium: .medium
+            case .semibold: .semibold
+            case .bold: .bold
+        }
     }
 
     var body: some View {
@@ -55,9 +83,10 @@ struct MarkdownView: View {
         }
         .markdownImageProvider(LocalFileImageProvider())
         .markdownTextStyle {
-            FontFamily(.custom(resolvedFontFamily))
+            FontFamily(.custom(resolvedFontName))
             FontSize(fontSize)
         }
+        .fontWeight(usesSystemFont ? systemFontWeight : nil)
         .markdownBlockStyle(\.paragraph) { configuration in
             configuration.label
                 .lineSpacing(lineSpacing)
@@ -75,7 +104,8 @@ struct MarkdownView: View {
         )
         .foregroundStyle(Color(uiColor: theme.foregroundColor))
         .textSelection(.enabled)
-        .padding(.horizontal, horizontalPadding)
+        .padding(.leading, horizontalPadding + leftMargin)
+        .padding(.trailing, horizontalPadding + rightMargin)
         .padding(.top, topPadding)
         .padding(.bottom, bottomPadding)
         .background(Color(uiColor: theme.backgroundColor))

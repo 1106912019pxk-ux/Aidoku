@@ -21,6 +21,21 @@ struct TextPage: Identifiable, Equatable {
     }
 }
 
+enum TextContentFormat: Equatable {
+    case markdown
+    case plainText
+
+    static func forLocalChapter(key: String?) -> TextContentFormat {
+        guard
+            let fileName = key?.split(separator: "/", maxSplits: 1).first,
+            fileName.lowercased().hasSuffix(".txt")
+        else {
+            return .markdown
+        }
+        return .plainText
+    }
+}
+
 /// Configuration for text pagination
 struct PaginationConfig {
     var fontSize: CGFloat = 16
@@ -28,13 +43,16 @@ struct PaginationConfig {
     var lineSpacing: CGFloat = 6
     var paragraphSpacing: CGFloat = 12
     var horizontalPadding: CGFloat = 24
+    var leftMargin: CGFloat = 0
+    var rightMargin: CGFloat = 0
     var topPadding: CGFloat = 32
     var bottomPadding: CGFloat = 32
     var firstLineIndent: CGFloat = 0
+    var fontWeight: TextReaderFontWeight = .regular
     var theme: TextReaderTheme = .current
 
     var font: UIFont {
-        TextReaderFontResolver.font(for: fontName, size: fontSize)
+        TextReaderFontResolver.font(for: fontName, size: fontSize, weight: fontWeight)
     }
 
     var paragraphStyle: NSParagraphStyle {
@@ -74,7 +92,10 @@ class TextPaginator {
     /// Calculate the usable content area for a page
     func contentSize(for pageSize: CGSize) -> CGSize {
         CGSize(
-            width: pageSize.width - (config.horizontalPadding * 2),
+            width: pageSize.width
+                - (config.horizontalPadding * 2)
+                - config.leftMargin
+                - config.rightMargin,
             height: pageSize.height - config.topPadding - config.bottomPadding
         )
     }
@@ -84,11 +105,17 @@ class TextPaginator {
     ///   - markdown: The source markdown text
     ///   - pageSize: The available page size (full screen)
     /// - Returns: Array of TextPage objects
-    func paginate(markdown: String, pageSize: CGSize) -> [TextPage] {
+    func paginate(
+        markdown: String,
+        pageSize: CGSize,
+        format: TextContentFormat = .markdown
+    ) -> [TextPage] {
         self.pageSize = pageSize
 
-        // Convert markdown to attributed string
-        let attributedString = markdownToAttributedString(markdown)
+        let attributedString = switch format {
+            case .markdown: markdownToAttributedString(markdown)
+            case .plainText: NSAttributedString(string: markdown, attributes: config.attributes)
+        }
 
         // Calculate content area
         let contentArea = contentSize(for: pageSize)
@@ -230,7 +257,7 @@ class TextPaginator {
         let headerFont = TextReaderFontResolver.font(
             for: config.fontName,
             size: headerFontSize,
-            bold: true
+            weight: config.fontWeight.emphasized
         )
 
         let style = NSMutableParagraphStyle()
@@ -303,7 +330,11 @@ class TextPaginator {
         var traits: UIFontDescriptor.SymbolicTraits = []
 
         if intent.contains(.stronglyEmphasized) {
-            traits.insert(.traitBold)
+            font = TextReaderFontResolver.font(
+                for: config.fontName,
+                size: font.pointSize,
+                weight: config.fontWeight.emphasized
+            )
         }
         if intent.contains(.emphasized) {
             traits.insert(.traitItalic)

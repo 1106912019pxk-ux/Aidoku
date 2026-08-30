@@ -13,9 +13,12 @@ struct ReaderTextView: View {
    let source: AidokuRunner.Source?
    let text: String?
    let fontFamily: String
+   let fontWeight: TextReaderFontWeight
    let fontSize: Double
    let lineSpacing: Double
    let horizontalPadding: Double
+   let leftMargin: Double
+   let rightMargin: Double
    let topPadding: Double
    let bottomPadding: Double
    let paragraphSpacing: Double
@@ -26,9 +29,12 @@ struct ReaderTextView: View {
        source: AidokuRunner.Source?,
        page: Page?,
        fontFamily: String,
+       fontWeight: TextReaderFontWeight,
        fontSize: Double,
        lineSpacing: Double,
        horizontalPadding: Double,
+       leftMargin: Double,
+       rightMargin: Double,
        topPadding: Double,
        bottomPadding: Double,
        paragraphSpacing: Double,
@@ -37,9 +43,12 @@ struct ReaderTextView: View {
    ) {
        self.source = source
        self.fontFamily = fontFamily
+       self.fontWeight = fontWeight
        self.fontSize = fontSize
        self.lineSpacing = lineSpacing
        self.horizontalPadding = horizontalPadding
+       self.leftMargin = leftMargin
+       self.rightMargin = rightMargin
        self.topPadding = topPadding
        self.bottomPadding = bottomPadding
        self.paragraphSpacing = paragraphSpacing
@@ -81,9 +90,12 @@ struct ReaderTextView: View {
            MarkdownView(
                text,
                fontFamily: fontFamily,
+               fontWeight: fontWeight,
                fontSize: fontSize,
                lineSpacing: lineSpacing,
                horizontalPadding: horizontalPadding,
+               leftMargin: leftMargin,
+               rightMargin: rightMargin,
                topPadding: topPadding,
                bottomPadding: bottomPadding,
                paragraphSpacing: paragraphSpacing,

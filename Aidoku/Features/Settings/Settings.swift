@@ -622,6 +622,15 @@ extension Settings {
                         value: .custom
                     ),
                     .init(
+                        key: "Reader.textFontWeight",
+                        title: textReaderLocalized("TEXT_FONT_WEIGHT", fallback: "Body Weight"),
+                        notification: .init("Reader.textFontWeight"),
+                        value: .select(.init(
+                            values: TextReaderFontWeight.allCases.map(\.rawValue),
+                            titles: TextReaderFontWeight.allCases.map(\.title)
+                        ))
+                    ),
+                    .init(
                         key: "Reader.textBackgroundColor",
                         title: textReaderLocalized("TEXT_BACKGROUND_COLOR", fallback: "Background Color"),
                         notification: .init("Reader.textBackgroundColor"),
@@ -647,6 +656,18 @@ extension Settings {
                         title: NSLocalizedString("TEXT_HORIZONTAL_PADDING"),
                         notification: .init("Reader.textHorizontalPadding"),
                         value: .stepper(.init(minimumValue: 8, maximumValue: 48, stepValue: 4))
+                    ),
+                    .init(
+                        key: "Reader.textLeftMargin",
+                        title: textReaderLocalized("TEXT_LEFT_MARGIN", fallback: "Left Margin"),
+                        notification: .init("Reader.textLeftMargin"),
+                        value: .stepper(.init(minimumValue: 0, maximumValue: 80, stepValue: 2))
+                    ),
+                    .init(
+                        key: "Reader.textRightMargin",
+                        title: textReaderLocalized("TEXT_RIGHT_MARGIN", fallback: "Right Margin"),
+                        notification: .init("Reader.textRightMargin"),
+                        value: .stepper(.init(minimumValue: 0, maximumValue: 80, stepValue: 2))
                     ),
                     .init(
                         key: "Reader.textTopPadding",

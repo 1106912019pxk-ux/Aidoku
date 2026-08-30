@@ -78,8 +78,8 @@ fetch upstream -> 对比上次同步点 -> 按主题解释变化、用户影响�
 | 启动项目 | Xcode 打开 `Aidoku.xcodeproj`，共享 scheme 为 `Aidoku` | 从工程文件确认，Windows 未运行 |
 | 运行测试 | `xcodebuild -project Aidoku.xcodeproj -scheme Aidoku -destination '<可用 iOS Simulator>' test` | scheme 包含 `AidokuTests`；具体 destination 待 CI 验证 |
 | SwiftLint | `swiftlint lint --reporter github-actions-logging` | 官方 PR 工作流使用；本机未安装 SwiftLint |
-| 无签名 archive | `xcodebuild -scheme "Aidoku" -configuration Release archive -archivePath build/Aidoku.xcarchive -skipPackagePluginValidation CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO` | 官方工作流命令；Windows 未执行 |
-| IPA 打包 | GitHub Actions `Build and upload nightly ipa` 手动触发 | 集成分支已改为仅 `workflow_dispatch`；新 fork 尚未注册任何 workflow，未运行 |
+| 无签名 archive | `xcodebuild -scheme "Aidoku" -configuration Release archive -archivePath build/Aidoku.xcarchive -skipPackagePluginValidation CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO` | GitHub Actions 已使用 Xcode 26.6 对 `d5dd3739` 成功执行 Release archive |
+| IPA 打包 | GitHub Actions `Build and upload nightly ipa` 手动触发 | 运行 `33294692786` 成功；无签名 IPA 已下载、校验 SHA-256 并完成 ZIP/主程序结构复核 |
 
 ## 数据和外部服务
 
@@ -94,8 +94,8 @@ fetch upstream -> 对比上次同步点 -> 按主题解释变化、用户影响�
 - Codex Windows 沙箱会以 `CodexSandboxOnline`/`CodexSandboxOffline` 身份运行命令；不得让这些账号创建当前仓库的 `.git` 根目录。沙箱创建的 Git 对象子项可以有混合所有者，项目预检只保护 `.git` 根目录这一初始化边界。
 - 官方上游在共同祖先后已有 41 个提交并重组目录；旧代码不能假设原 `Shared/`、`iOS/` 路径仍存在。
 - 旧最终功能分支相对共同祖先包含 77 个提交，其中有撤销实验和 CI 噪声；迁移必须按最终行为切片。
-- 当前工作分支的代码迁移范围已收敛，详细映射见 `docs/LEGACY_MIGRATION_AUDIT.md`；尚未在 macOS 上编译，所有 Swift 类型/并发结论仍需编译证据确认。
-- iPadOS 精确版本和新基线真机兼容性尚未验证。
+- 当前迁移产品代码 `d5dd3739` 已通过 Xcode 26.6 Release archive，并由用户在 iPhone 17 和 iPad Air 4 上接受为第一里程碑稳定版本；后续本地补丁仍需各自编译和验收，不能继承该构建结论。
+- iPad Air 4 已完成第一里程碑验收，但 iPadOS 精确版本仍未记录。
 
 ## 相关技术决定
 

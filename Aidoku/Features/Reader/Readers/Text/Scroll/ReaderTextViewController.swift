@@ -121,6 +121,9 @@ class ReaderTextViewController: BaseViewController {
     private var currentFontFamily: String {
         UserDefaults.standard.string(forKey: "Reader.textFontFamily") ?? "System"
     }
+    private var currentFontWeight: TextReaderFontWeight {
+        .current
+    }
     private var currentFontSize: Double {
         UserDefaults.standard.object(forKey: "Reader.textFontSize") as? Double ?? 18
     }
@@ -129,6 +132,12 @@ class ReaderTextViewController: BaseViewController {
     }
     private var currentHorizontalPadding: Double {
         UserDefaults.standard.object(forKey: "Reader.textHorizontalPadding") as? Double ?? 24
+    }
+    private var currentLeftMargin: Double {
+        UserDefaults.standard.object(forKey: "Reader.textLeftMargin") as? Double ?? 0
+    }
+    private var currentRightMargin: Double {
+        UserDefaults.standard.object(forKey: "Reader.textRightMargin") as? Double ?? 0
     }
     private var currentTopPadding: Double {
         UserDefaults.standard.object(forKey: "Reader.textTopPadding") as? Double ?? 32
@@ -147,8 +156,10 @@ class ReaderTextViewController: BaseViewController {
         let hc = HostingController(
             rootView: ReaderTextView(
                 source: viewModel.source, page: page,
-                fontFamily: currentFontFamily, fontSize: currentFontSize,
+                fontFamily: currentFontFamily, fontWeight: currentFontWeight,
+                fontSize: currentFontSize,
                 lineSpacing: currentLineSpacing, horizontalPadding: currentHorizontalPadding,
+                leftMargin: currentLeftMargin, rightMargin: currentRightMargin,
                 topPadding: currentTopPadding, bottomPadding: currentBottomPadding,
                 paragraphSpacing: currentParagraphSpacing, firstLineIndent: currentFirstLineIndent,
                 theme: .current
@@ -213,8 +224,10 @@ class ReaderTextViewController: BaseViewController {
                 let page = section.pages[safe: index]
                 hc.rootView = ReaderTextView(
                     source: viewModel.source, page: page,
-                    fontFamily: currentFontFamily, fontSize: currentFontSize,
+                    fontFamily: currentFontFamily, fontWeight: currentFontWeight,
+                    fontSize: currentFontSize,
                     lineSpacing: currentLineSpacing, horizontalPadding: currentHorizontalPadding,
+                    leftMargin: currentLeftMargin, rightMargin: currentRightMargin,
                     topPadding: currentTopPadding, bottomPadding: currentBottomPadding,
                     paragraphSpacing: currentParagraphSpacing, firstLineIndent: currentFirstLineIndent,
                     theme: .current
@@ -229,9 +242,12 @@ class ReaderTextViewController: BaseViewController {
     override func configure() {
         let styleKeys = [
             "Reader.textFontFamily",
+            "Reader.textFontWeight",
             "Reader.textFontSize",
             "Reader.textLineSpacing",
             "Reader.textHorizontalPadding",
+            "Reader.textLeftMargin",
+            "Reader.textRightMargin",
             "Reader.textTopPadding",
             "Reader.textBottomPadding",
             "Reader.textParagraphSpacing",

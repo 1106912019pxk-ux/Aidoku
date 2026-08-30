@@ -63,12 +63,16 @@ class ReaderPagedTextViewController: BaseObservingViewController {
     /// Insets for each physical page in a two-page spread. Device safe-area
     /// padding belongs only on the outside edges, never in the center gutter.
     func textInsetsForDoublePage(isLeftPage: Bool) -> UIEdgeInsets {
-        let horizontalPadding = paginator.currentConfig.horizontalPadding
+        let config = paginator.currentConfig
         return UIEdgeInsets(
             top: textInsets.top,
-            left: horizontalPadding + (isLeftPage ? physicalSafeAreaInsets.left : 0),
+            left: config.horizontalPadding
+                + config.leftMargin
+                + (isLeftPage ? physicalSafeAreaInsets.left : 0),
             bottom: textInsets.bottom,
-            right: horizontalPadding + (isLeftPage ? 0 : physicalSafeAreaInsets.right)
+            right: config.horizontalPadding
+                + config.rightMargin
+                + (isLeftPage ? 0 : physicalSafeAreaInsets.right)
         )
     }
 
@@ -143,8 +147,11 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         }
         for key in [
             "Reader.textFontSize",
+            "Reader.textFontWeight",
             "Reader.textLineSpacing",
             "Reader.textHorizontalPadding",
+            "Reader.textLeftMargin",
+            "Reader.textRightMargin",
             "Reader.textTopPadding",
             "Reader.textBottomPadding",
             "Reader.textParagraphSpacing",
@@ -169,6 +176,12 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         if let horizontalPadding = UserDefaults.standard.object(forKey: "Reader.textHorizontalPadding") as? CGFloat {
             config.horizontalPadding = horizontalPadding
         }
+        if let leftMargin = UserDefaults.standard.object(forKey: "Reader.textLeftMargin") as? CGFloat {
+            config.leftMargin = leftMargin
+        }
+        if let rightMargin = UserDefaults.standard.object(forKey: "Reader.textRightMargin") as? CGFloat {
+            config.rightMargin = rightMargin
+        }
         if let topPadding = UserDefaults.standard.object(forKey: "Reader.textTopPadding") as? CGFloat {
             config.topPadding = topPadding
         }
@@ -184,6 +197,7 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         if let fontFamily = UserDefaults.standard.string(forKey: "Reader.textFontFamily") {
             config.fontName = fontFamily
         }
+        config.fontWeight = .current
         config.theme = .current
 
         view.backgroundColor = config.theme.backgroundColor
@@ -379,9 +393,9 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         let config = paginator.currentConfig
         textInsets = UIEdgeInsets(
             top: windowSafeArea.top + topStatusReserve + config.topPadding,
-            left: windowSafeArea.left + config.horizontalPadding,
+            left: windowSafeArea.left + config.horizontalPadding + config.leftMargin,
             bottom: windowSafeArea.bottom + bottomStatusReserve + config.bottomPadding,
-            right: windowSafeArea.right + config.horizontalPadding
+            right: windowSafeArea.right + config.horizontalPadding + config.rightMargin
         )
 
         let pageSize: CGSize
@@ -395,7 +409,11 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         // Track size to prevent repagination loops
         lastPaginationSize = view.bounds.size
 
-        pages = paginator.paginate(markdown: text, pageSize: pageSize)
+        pages = paginator.paginate(
+            markdown: text,
+            pageSize: pageSize,
+            format: contentFormat(for: chapter ?? viewModel.chapter)
+        )
         hasPaginated = true
         updateReadingStatus()
 
@@ -487,6 +505,11 @@ class ReaderPagedTextViewController: BaseObservingViewController {
             )
             return object?.scrollPosition.map { CGFloat($0.doubleValue) }
         }
+    }
+
+    private func contentFormat(for chapter: AidokuRunner.Chapter?) -> TextContentFormat {
+        guard viewModel.manga.sourceKey == LocalSourceRunner.sourceKey else { return .markdown }
+        return .forLocalChapter(key: chapter?.key)
     }
 
     private func getCurrentText() -> String? {
@@ -860,7 +883,11 @@ extension ReaderPagedTextViewController: ReaderSpeechTextProviding {
             width: usesDoublePages ? safeWidth / 2 : safeWidth,
             height: safeHeight
         )
-        return paginator.paginate(markdown: markdown, pageSize: pageSize).map { page in
+        return paginator.paginate(
+            markdown: markdown,
+            pageSize: pageSize,
+            format: contentFormat(for: chapter)
+        ).map { page in
             ReaderSpeechSegment(
                 id: "\(chapter.key)|\(page.id)",
                 chapterKey: chapter.key,

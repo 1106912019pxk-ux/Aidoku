@@ -2,7 +2,7 @@
 
 - 任务 ID：legacy-capability-migration-20260828
 - 类型：功能实现 / 审查交接
-- 状态：代码迁移与云端 archive/IPA 完成，待自动测试与真机验收
+- 状态：第一里程碑已完成并由用户接受；后续问题转入独立任务卡
 - 当前分支：integration/legacy-capability-migration
 
 ## 用户最终得到的结果
@@ -78,24 +78,26 @@
 - 2026-08-30：打包前独立完整性复核发现旧版“阅读设置中选择速度并启动自动阅读”的入口未迁入；已恢复该入口，并修正独立会话被全局自动滚动开关误停的问题。
 - 2026-08-30：真机反馈确认第一次迁移仍遗漏分页常驻阅读状态、分页文字选择和通用设置图标；分页转滚动还会在正文异步加载前把空布局误判为末尾。已按旧最终行为恢复分页章节/时间/电量/页码、双页外侧安全区、分页系统文字选择和通用设置图标，并收紧自动阅读结束条件。用户确认滚动文字不显示常驻状态、暂不拆分左右边距、不新增应用层双击选词手势。
 - 2026-08-30：新增 `docs/PERSONAL_REQUIREMENTS.md`，以 44 个稳定需求编号记录产品、阅读器、自动阅读、TTS、TXT、来源适配和 Git/验收规则；后续上游同步不得再用符号存在或编译成功代替逐行为审查。
+- 2026-08-30：用户确认除 iPad 布局外，本轮其余目标已完成真机验收；同时发现分页文字翻到新页后的第一次点按被文字选择交互吞掉。修复仅允许外层单击 tap zone 与可选择 `UITextView` 的单击识别器同时成功，不放宽长按、双击或分页滑动；新增聚焦策略测试。左右独立边距、正文粗度和 TXT 字体覆盖仍处于需求讨论，未在本次 BUG 补丁中实现。
+- 2026-08-30：用户随后完成 iPad Air 4 验收，并明确接受当前移植为第一项里程碑的稳定版本。已构建并验收的产品代码锚点为 `d5dd3739`；当前工作树中的首次点击修复尚未云端编译或真机复验，作为里程碑后的补丁移交，不改变已验收锚点。
 - 2026-08-29：完成 PICA/E-Hentai 宿主适配迁移：PICA 专用线路接入 Runner、Nuke 和下载器；详情页远端收藏、元数据/作者交互、分类屏蔽/空页分页，以及 E-Hentai 账户收藏均按来源键限定。
 - 2026-08-29：生成 `docs/LEGACY_MIGRATION_AUDIT.md`，逐项记录旧证据、新位置、冲突处理、验证和显式排除项。
 - 2026-08-30：独立静态复核后触发 macOS 26 / Xcode 26.6 archive。前三次构建依次暴露 `ReaderSpeech.swift` 缺少 SwiftUI 导入、`if` 表达式内提前返回、错误描述 getter 缺少显式返回；均按日志做最小等价修复。第 4 次运行 `33265963550` 在提交 `140cce2b` 上通过 Build、Package ipa 和 Upload artifacts。
 - 2026-08-30：成功产物为 `Aidoku-iOS_nightly-140cce2.ipa`（artifact ID `9718720054`，GitHub 显示 11.2 MB，SHA-256 `9da1d8918dcf3acbaa19613982223528bfb51d89bf2c9902ee297734d60ee2cc`）。受当前 CLI Token/浏览器下载路径限制，尚未完成本地解包复核。
-- 当前步骤：迁移代码已经通过 Release archive 和无签名 IPA 生成；下一步是补跑可用的自动测试，并在 iPhone 17、iPad Air 4 做一次集中高价值验收。
+- 当前步骤：第一里程碑已关闭；首次点击补丁及后续阅读器优化转入 `tasks/2026-08-30-post-migration-reader-todo.md`，新对话不得重新执行整套迁移。
 
 ## 验证证据
 
 - 自动检查及结果：`git diff --check` 通过；`pwsh -NoProfile -File scripts/check-git-ownership.ps1` 通过且仓库所有者为 `AMADEUS\Lain`；36 个受影响 Swift 文件通过括号、尾随空白和冲突标记扫描；20 项能力入口契约扫描通过；plist XML、后台 `audio` 唯一声明、自动阅读/朗读本地化键唯一性均通过；未跟踪文件名未发现 IPA、签名或凭据。GitHub Actions 运行 `33265963550` 已通过 Xcode 26.6 Release archive、IPA 压缩和 artifact 上传。
-- 本轮反馈修复检查：5 个受影响 Swift 文件通过冲突标记和括号结构扫描，7 项聚焦行为入口检查通过；44 个个人需求编号全部唯一；确认未新增左右独立边距键、滚动文字阅读器未加入常驻状态；`git diff --check` 和 Git 所有权检查通过。提交 `d5dd3739` 已由 GitHub Actions `33294692786` 在 Xcode 26.6 下完成 Release archive、IPA 压缩和 artifact 上传；artifact ID `9727151162`，下载 IPA 为 11,811,325 字节，SHA-256 `8c1777ab0cc98fbc3f1dc234cc526a846f7006c0ab011cdbc0d4ff9ec659c9cd`，应用主二进制和 `Info.plist` 均存在且不含签名描述文件。真机行为仍待集中验收。
-- 人工验收：待最终集中验收。
-- 尚未验证：Swift Testing/XCTest、SwiftLint，以及 iPhone 与 iPad 上的实际交互行为；最新成功 artifact 已完成本地下载和解包结构复核。
+- 本轮反馈修复检查：5 个受影响 Swift 文件通过冲突标记和括号结构扫描，7 项聚焦行为入口检查通过；44 个个人需求编号全部唯一；确认未新增左右独立边距键、滚动文字阅读器未加入常驻状态；`git diff --check` 和 Git 所有权检查通过。提交 `d5dd3739` 已由 GitHub Actions `33294692786` 在 Xcode 26.6 下完成 Release archive、IPA 压缩和 artifact 上传；artifact ID `9727151162`，下载 IPA 为 11,811,325 字节，SHA-256 `8c1777ab0cc98fbc3f1dc234cc526a846f7006c0ab011cdbc0d4ff9ec659c9cd`，应用主二进制和 `Info.plist` 均存在且不含签名描述文件。用户随后完成双设备验收并接受该产品代码为第一里程碑稳定锚点；当前工作树中的首次点击补丁不包含在该构建结论内。
+- 人工验收：用户已经完成 iPhone 17 和 iPad Air 4 集中验收，并接受 `d5dd3739` 对应版本为第一项里程碑稳定版本。分页文字“新页第一次点击无效”作为已知回归，当前本地补丁仍待下一轮编译和按原路径复验。
+- 尚未验证：新增手势策略测试、SwiftLint，以及分页首次点按本地补丁的云端编译和真机行为；iPadOS 精确版本仍未记录。最新成功 artifact 已完成本地下载和解包结构复核。
 
 ## 交接
 
 - 已改变的行为：文字阅读设置增加字体导入、独立上下边距、段距、首行缩进和背景主题；分页与滚动渲染共用字体解析规则；TXT 可以预览并按章节导入，重启扫描能恢复目录和内容；滚动文字阅读器可以使用统一的自动阅读按钮；文字阅读器可以打开朗读控制，默认使用微软在线语音，失败时降级到 Apple 系统语音。
 - 修改的文件或模块：ReaderSettingsView、TextReaderFontStore、TextReaderPreferences、TextPaginator、分页/滚动文字阅读器、ReaderReaderDelegate、ReaderViewController、ReaderSpeech、WebtoonReader、MarkdownView、本地文件管理、TXT 解析器、PicaNetworkRouting、AidokuRunner 请求入口、Nuke/下载器、MangaDetailsHeaderView、来源 Home/筛选分页、LibraryViewController、Info.plist、本地化和聚焦测试。
 - 已知限制：Windows 无法本地运行 iOS 工程；朗读尚未在真机验证 WebSocket 服务、锁屏控制和跨章节定位；PICA/E-Hentai 收藏需要配套定制 AIX；当前 IPA 是无签名云端产物。
-- 当前 Git 状态：迁移分支已提交并推送到 `origin/integration/legacy-capability-migration`；尚未合入 `main`。
-- 推荐下一步：先补跑无需额外打包的自动测试；随后集中使用当前成功 IPA 在 iPhone 17 和 iPad Air 4 验收核心阅读、TXT、自动阅读、TTS 与定制来源链路。
-- 新对话必读文件：本任务卡、`docs/LEGACY_CAPABILITY_MATRIX.md`、`docs/ARCHITECTURE.md`。
+- 当前 Git 状态：迁移分支已推送到 `origin/integration/legacy-capability-migration`，远端 HEAD 为文档提交 `05a82dfd`，其父提交 `d5dd3739` 是已构建和验收的产品代码；首次点击修复、测试及本次交接文档仍在本地工作树，未提交、未推送。分支尚未合入 `main`。
+- 推荐下一步：在新对话读取后续任务卡，先决定是否把首次点击修复作为独立补丁编译/复验，再依次处理分页 TXT 字体、左右独立边距和字体粗度；不要重新执行整套迁移。
+- 新对话必读文件：`tasks/2026-08-30-post-migration-reader-todo.md`、`docs/PERSONAL_REQUIREMENTS.md`、本任务卡、`docs/ARCHITECTURE.md`。
