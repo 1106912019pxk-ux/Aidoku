@@ -1003,7 +1003,10 @@ extension ReaderTextViewController: ReaderAutoScrolling {
             scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
         )
         guard maximumOffset > minimumOffset else {
-            if nextChapter == nil {
+            // A newly-created scroll reader starts its display link before
+            // setChapter's asynchronous load has produced any sections. Do not
+            // mistake that transient empty layout for the end of the book.
+            if !isLoadingChapter, !sections.isEmpty, nextChapter == nil {
                 stopAutoScrolling()
                 autoScrollingDidReachEnd?()
             }

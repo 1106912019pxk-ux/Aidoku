@@ -230,7 +230,7 @@ class ReaderViewController: BaseObservingViewController {
             moreButton,
             speechBarButton,
             UIBarButtonItem(
-                image: UIImage(systemName: "textformat.size"),
+                image: UIImage(systemName: "slider.horizontal.3"),
                 style: .plain,
                 target: self,
                 action: #selector(openReaderSettings)
@@ -1419,6 +1419,9 @@ extension ReaderViewController: ReaderHoldingDelegate {
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         tap.numberOfTapsRequired = 1
+        // Keep the reader chrome gesture from cancelling UITextView's native
+        // long-press selection in paged text mode.
+        tap.cancelsTouchesInView = false
         tap.delegate = self
         let singleTapLookupEnabled = isDictionarySingleTapLookupActiveForCurrentChapter
         configureNavigationBarDismissTapGesture(enabled: singleTapLookupEnabled)

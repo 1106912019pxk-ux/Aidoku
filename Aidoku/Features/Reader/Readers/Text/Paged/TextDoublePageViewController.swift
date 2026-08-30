@@ -87,16 +87,16 @@ class TextDoublePageViewController: UIViewController {
     /// geometry. These never change when bars hide/show, so text stays stable.
     private func updateTextInsets() {
         guard let parentReader else { return }
-        let insets = parentReader.textInsets
-        leftTextView.textContainerInset = insets
-        rightTextView.textContainerInset = insets
+        leftTextView.textContainerInset = parentReader.textInsetsForDoublePage(isLeftPage: true)
+        rightTextView.textContainerInset = parentReader.textInsetsForDoublePage(isLeftPage: false)
     }
 
     private func createTextView() -> UITextView {
         let tv = UITextView()
         tv.isEditable = false
+        tv.isSelectable = true
         tv.isScrollEnabled = false
-        tv.isUserInteractionEnabled = false  // Let taps pass through to parent tap zones
+        tv.isUserInteractionEnabled = true
         tv.textContainer.lineFragmentPadding = 0  // Match paginator's layout width
         tv.backgroundColor = parentReader?.textTheme.backgroundColor ?? TextReaderTheme.current.backgroundColor
         return tv

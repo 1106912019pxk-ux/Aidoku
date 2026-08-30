@@ -42,11 +42,35 @@ class ReaderPagedTextViewController: BaseObservingViewController {
     private var isLoadingChapter = false  // Prevent race conditions
     private var lastPaginationSize: CGSize = .zero  // Track size to avoid repagination loops
 
+    // Always-visible reading status for paged text. It lives inside the text
+    // reader so it remains visible while the navigation chrome is hidden.
+    private let readingStatusView = UIView()
+    private let chapterStatusLabel = UILabel()
+    private let timeStatusLabel = UILabel()
+    private let pageStatusLabel = UILabel()
+    private var readingStatusTimer: Timer?
+    private var physicalSafeAreaInsets: UIEdgeInsets = .zero
+
+    private let topStatusReserve: CGFloat = 28
+    private let bottomStatusReserve: CGFloat = 26
+
     /// Fixed text insets used by child page view controllers.
     /// Computed once during pagination and kept constant so text doesn't shift
     /// when bars hide/show.
     private(set) var textInsets: UIEdgeInsets = .zero
     var textTheme: TextReaderTheme { paginator.currentConfig.theme }
+
+    /// Insets for each physical page in a two-page spread. Device safe-area
+    /// padding belongs only on the outside edges, never in the center gutter.
+    func textInsetsForDoublePage(isLeftPage: Bool) -> UIEdgeInsets {
+        let horizontalPadding = paginator.currentConfig.horizontalPadding
+        return UIEdgeInsets(
+            top: textInsets.top,
+            left: horizontalPadding + (isLeftPage ? physicalSafeAreaInsets.left : 0),
+            bottom: textInsets.bottom,
+            right: horizontalPadding + (isLeftPage ? 0 : physicalSafeAreaInsets.right)
+        )
+    }
 
     /// Indicates whether pagination has been performed for the current chapter.
     /// Used to distinguish between the pre-pagination placeholder and actual paginated content.
@@ -80,6 +104,10 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         super.init()
     }
 
+    deinit {
+        readingStatusTimer?.invalidate()
+    }
+
     // MARK: - Lifecycle
 
     override func configure() {
@@ -96,6 +124,8 @@ class ReaderPagedTextViewController: BaseObservingViewController {
             pageViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         pageViewController.didMove(toParent: self)
+
+        configureReadingStatus()
 
         updatePageLayout()
         updateTextConfig()  // Apply saved text settings
@@ -160,6 +190,7 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         pageViewController.view.backgroundColor = config.theme.backgroundColor
 
         paginator.updateConfig(config)
+        updateReadingStatusAppearance()
 
         // Repaginate with new settings
         if !pages.isEmpty {
@@ -169,6 +200,8 @@ class ReaderPagedTextViewController: BaseObservingViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+
+        layoutReadingStatus()
 
         // Repaginate if view size changed significantly (e.g., rotation)
         let newSize = view.bounds.size
@@ -218,6 +251,106 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         }
     }
 
+    // MARK: - Reading Status
+
+    private func configureReadingStatus() {
+        readingStatusView.isUserInteractionEnabled = false
+        readingStatusView.backgroundColor = .clear
+        view.addSubview(readingStatusView)
+
+        for label in [chapterStatusLabel, timeStatusLabel, pageStatusLabel] {
+            label.font = .systemFont(ofSize: 12, weight: .regular)
+            label.numberOfLines = 1
+            label.adjustsFontSizeToFitWidth = true
+            label.minimumScaleFactor = 0.8
+            readingStatusView.addSubview(label)
+        }
+        chapterStatusLabel.textAlignment = .left
+        timeStatusLabel.textAlignment = .right
+        pageStatusLabel.textAlignment = .left
+
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        updateReadingStatusAppearance()
+        updateReadingStatus()
+        readingStatusTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            self?.updateReadingStatus()
+        }
+    }
+
+    private func updateReadingStatusAppearance() {
+        let color = textTheme.secondaryForegroundColor
+        chapterStatusLabel.textColor = color
+        timeStatusLabel.textColor = color
+        pageStatusLabel.textColor = color
+    }
+
+    private func layoutReadingStatus() {
+        readingStatusView.frame = view.bounds
+
+        let safeArea = view.window?.safeAreaInsets ?? view.safeAreaInsets
+        physicalSafeAreaInsets = safeArea
+        let horizontalInset = max(16, safeArea.left + 16)
+        let trailingInset = max(16, safeArea.right + 16)
+        let availableWidth = max(0, view.bounds.width - horizontalInset - trailingInset)
+        let topY = safeArea.top + 4
+        let statusHeight: CGFloat = 18
+
+        chapterStatusLabel.frame = CGRect(
+            x: horizontalInset,
+            y: topY,
+            width: availableWidth * 0.62,
+            height: statusHeight
+        )
+        timeStatusLabel.frame = CGRect(
+            x: horizontalInset + availableWidth * 0.62,
+            y: topY,
+            width: availableWidth * 0.38,
+            height: statusHeight
+        )
+        pageStatusLabel.frame = CGRect(
+            x: horizontalInset,
+            y: max(topY, view.bounds.height - safeArea.bottom - statusHeight - 4),
+            width: availableWidth,
+            height: statusHeight
+        )
+        view.bringSubviewToFront(readingStatusView)
+    }
+
+    private func updateReadingStatus() {
+        chapterStatusLabel.text = chapterDisplayTitle
+
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.setLocalizedDateFormatFromTemplate("HH:mm")
+        let time = formatter.string(from: Date())
+        let batteryLevel = UIDevice.current.batteryLevel
+        if batteryLevel >= 0 {
+            timeStatusLabel.text = "\(time)  \(Int((batteryLevel * 100).rounded()))%"
+        } else {
+            timeStatusLabel.text = time
+        }
+
+        guard !pages.isEmpty else {
+            pageStatusLabel.text = nil
+            return
+        }
+        let firstVisible = min(currentPageIndex + 1, pages.count)
+        let lastVisible = usesDoublePages ? min(firstVisible + 1, pages.count) : firstVisible
+        pageStatusLabel.text = firstVisible == lastVisible
+            ? "\(firstVisible) / \(pages.count)"
+            : "\(firstVisible)–\(lastVisible) / \(pages.count)"
+    }
+
+    private var chapterDisplayTitle: String {
+        if let title = chapter?.title, !title.isEmpty {
+            return title
+        }
+        if let chapterNumber = chapter?.chapterNumber {
+            return String(format: NSLocalizedString("CHAPTER_X", comment: ""), chapterNumber)
+        }
+        return viewModel.manga.title
+    }
+
     // MARK: - Pagination
 
     private func repaginate() {
@@ -234,16 +367,20 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         // constant regardless of bar visibility. This prevents text from shifting
         // when bars are toggled.
         let windowSafeArea = view.window?.safeAreaInsets ?? view.safeAreaInsets
-        let toolbarBuffer: CGFloat = 100  // Fixed space reserved for nav bar + toolbar
+        physicalSafeAreaInsets = windowSafeArea
         let safeWidth = view.bounds.width - windowSafeArea.left - windowSafeArea.right
-        let safeHeight = view.bounds.height - windowSafeArea.top - windowSafeArea.bottom - toolbarBuffer
+        let safeHeight = view.bounds.height
+            - windowSafeArea.top
+            - windowSafeArea.bottom
+            - topStatusReserve
+            - bottomStatusReserve
 
         // Compute fixed text insets for child page VCs (must match pagination geometry)
         let config = paginator.currentConfig
         textInsets = UIEdgeInsets(
-            top: windowSafeArea.top + toolbarBuffer / 2 + config.topPadding,
+            top: windowSafeArea.top + topStatusReserve + config.topPadding,
             left: windowSafeArea.left + config.horizontalPadding,
-            bottom: windowSafeArea.bottom + toolbarBuffer / 2 + config.bottomPadding,
+            bottom: windowSafeArea.bottom + bottomStatusReserve + config.bottomPadding,
             right: windowSafeArea.right + config.horizontalPadding
         )
 
@@ -260,6 +397,7 @@ class ReaderPagedTextViewController: BaseObservingViewController {
 
         pages = paginator.paginate(markdown: text, pageSize: pageSize)
         hasPaginated = true
+        updateReadingStatus()
 
         // Pagination can produce no pages (e.g. a chapter whose only content is a
         // failed image reference); bail out before any indexing below
@@ -432,6 +570,7 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         // Update current page display (1-indexed for UI)
         reportCurrentPage(for: targetIndex)
         updateSliderPosition()
+        updateReadingStatus()
     }
 
     /// Snap an index to the left page of its double-page spread so spreads always
@@ -521,6 +660,7 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         isLoadingChapter = true
         hasPaginated = false
         self.chapter = chapter
+        updateReadingStatus()
 
         await viewModel.loadPages(chapter: chapter)
 
@@ -779,6 +919,7 @@ extension ReaderPagedTextViewController: UIPageViewControllerDelegate {
 
         reportCurrentPage(for: currentPageIndex)
         updateSliderPosition()
+        updateReadingStatus()
     }
 
     func pageViewController(
