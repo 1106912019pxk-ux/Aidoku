@@ -1126,7 +1126,6 @@ extension ReaderViewController {
         configureAutoScrollingReaderIfNeeded()
         configureDictionaryOverlayInteractionMode()
         configureDictionaryOverlayTapHandler()
-        configureBarToggleTapGestures()
         updateAutoScrollButton()
         updateSpeechButton()
         disableSwipeGestures()
@@ -1435,19 +1434,11 @@ extension ReaderViewController: ReaderHoldingDelegate {
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         tap.numberOfTapsRequired = 1
-        // Keep the reader chrome gesture from cancelling UITextView's native
-        // long-press selection in paged text mode.
-        tap.cancelsTouchesInView = false
         tap.delegate = self
         let singleTapLookupEnabled = isDictionarySingleTapLookupActiveForCurrentChapter
         configureNavigationBarDismissTapGesture(enabled: singleTapLookupEnabled)
 
-        let usesImmediatePagedTextTaps = reader is ReaderPagedTextViewController
-        if
-            !usesImmediatePagedTextTaps,
-            !singleTapLookupEnabled,
-            !UserDefaults.standard.bool(forKey: "Reader.disableDoubleTap")
-        {
+        if !singleTapLookupEnabled, !UserDefaults.standard.bool(forKey: "Reader.disableDoubleTap") {
             let doubleTap = UITapGestureRecognizer(
                 target: self,
                 action: nil
