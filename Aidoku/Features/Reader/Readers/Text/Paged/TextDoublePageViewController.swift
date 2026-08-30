@@ -92,7 +92,7 @@ class TextDoublePageViewController: UIViewController {
     }
 
     private func createTextView() -> UITextView {
-        let tv = UITextView()
+        let tv = PagedSelectableTextView()
         tv.isEditable = false
         tv.isSelectable = true
         tv.isScrollEnabled = false

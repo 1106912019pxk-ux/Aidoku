@@ -9,16 +9,6 @@ import AidokuRunner
 import CoreData
 import ZIPFoundation
 
-enum LocalCoverRecovery {
-    static func fileURL(for storedCoverURL: URL) -> URL {
-        storedCoverURL.toAidokuFileUrl() ?? storedCoverURL
-    }
-
-    static func stableURLString(for coverFileURL: URL) -> String? {
-        coverFileURL.toAidokuImageUrl()?.absoluteString
-    }
-}
-
 final actor LocalFileDataManager {
     static let shared = LocalFileDataManager()
 
@@ -446,30 +436,17 @@ extension LocalFileDataManager {
                 guard !toRemove.contains($0.id) else { return false }
                 // check if cover url is nil or doesn't exist on disk
                 guard let coverUrl = $0.cover, let url = URL(string: coverUrl) else { return true }
-                return !LocalCoverRecovery.fileURL(for: url).exists
+                return !url.exists
             }
-        var repairedCover = false
         for manga in toFixCovers {
             // try to find a cover image in the manga folder
             for ext in LocalFileManager.allowedImageExtensions {
                 let coverPath = mangaFolders.first(where: { $0.lastPathComponent == manga.id })?
                     .appendingPathComponent("cover.\(ext)")
-                if
-                    let coverPath,
-                    coverPath.exists,
-                    let stableURL = LocalCoverRecovery.stableURLString(for: coverPath)
-                {
-                    manga.cover = stableURL
-                    repairedCover = true
+                if let coverPath, coverPath.exists {
+                    manga.cover = coverPath.absoluteString
                     break
                 }
-            }
-        }
-        if repairedCover {
-            do {
-                try context.save()
-            } catch {
-                LogManager.logger.error("Failed to persist repaired local cover URLs: \(error.localizedDescription)")
             }
         }
 

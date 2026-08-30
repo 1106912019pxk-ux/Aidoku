@@ -180,7 +180,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
                 "Reader.textReaderStyle": "scroll",
                 "Reader.textFontFamily": "System",
-                "Reader.textFontWeight": "regular",
                 "Reader.textBackgroundColor": "system",
                 "Reader.textFontSize": 18,
                 "Reader.textLineSpacing": 8,

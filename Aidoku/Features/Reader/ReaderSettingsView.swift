@@ -640,17 +640,6 @@ extension ReaderSettingsView {
             TextReaderFontSettingView(title: NSLocalizedString("TEXT_FONT_FAMILY"))
             SettingView(
                 setting: .init(
-                    key: "Reader.textFontWeight",
-                    title: textReaderLocalized("TEXT_FONT_WEIGHT", fallback: "Body Weight"),
-                    notification: .init("Reader.textFontWeight"),
-                    value: .select(.init(
-                        values: TextReaderFontWeight.allCases.map(\.rawValue),
-                        titles: TextReaderFontWeight.allCases.map(\.title)
-                    ))
-                )
-            )
-            SettingView(
-                setting: .init(
                     key: "Reader.textBackgroundColor",
                     title: textReaderLocalized("TEXT_BACKGROUND_COLOR", fallback: "Background Color"),
                     notification: .init("Reader.textBackgroundColor"),

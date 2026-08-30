@@ -14,7 +14,6 @@ struct MarkdownView: View {
     @State private var showSafari = false
 
     let fontFamily: String
-    let fontWeight: TextReaderFontWeight
     let fontSize: CGFloat
     let lineSpacing: CGFloat
     let horizontalPadding: CGFloat
@@ -28,7 +27,6 @@ struct MarkdownView: View {
     init(
         _ markdownString: String,
         fontFamily: String = "System",
-        fontWeight: TextReaderFontWeight = .regular,
         fontSize: CGFloat = 18,
         lineSpacing: CGFloat = 8,
         horizontalPadding: CGFloat = 16,
@@ -42,7 +40,6 @@ struct MarkdownView: View {
     ) {
         self.markdownString = Self.indentParagraphs(in: markdownString, by: firstLineIndent)
         self.fontFamily = fontFamily
-        self.fontWeight = fontWeight
         self.fontSize = fontSize
         self.lineSpacing = lineSpacing
         self.horizontalPadding = horizontalPadding
@@ -54,27 +51,8 @@ struct MarkdownView: View {
         self.theme = theme
     }
 
-    private var usesSystemFont: Bool {
-        TextReaderFontResolver.resolvedName(for: fontFamily) == nil
-    }
-
-    private var resolvedFontName: String {
-        guard !usesSystemFont else { return ".AppleSystemUIFont" }
-        return TextReaderFontResolver.font(
-            for: fontFamily,
-            size: fontSize,
-            weight: fontWeight
-        ).fontName
-    }
-
-    private var systemFontWeight: Font.Weight {
-        switch fontWeight {
-            case .light: .light
-            case .regular: .regular
-            case .medium: .medium
-            case .semibold: .semibold
-            case .bold: .bold
-        }
+    private var resolvedFontFamily: String {
+        TextReaderFontResolver.resolvedName(for: fontFamily) ?? ".AppleSystemUIFont"
     }
 
     var body: some View {
@@ -83,11 +61,8 @@ struct MarkdownView: View {
         }
         .markdownImageProvider(LocalFileImageProvider())
         .markdownTextStyle {
-            FontFamily(.custom(resolvedFontName))
+            FontFamily(.custom(resolvedFontFamily))
             FontSize(fontSize)
-            if usesSystemFont {
-                FontWeight(systemFontWeight)
-            }
         }
         .markdownBlockStyle(\.paragraph) { configuration in
             configuration.label

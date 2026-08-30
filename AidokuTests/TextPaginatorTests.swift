@@ -75,8 +75,7 @@ import UIKit
 
     @Test("Indented TXT body keeps the selected body font")
     func indentedTxtKeepsSelectedFont() throws {
-        var config = PaginationConfig()
-        config.fontWeight = .medium
+        let config = PaginationConfig()
         let text = "章节标题\n\n    中文正文保留行首空格"
         let pages = TextPaginator(config: config).paginate(
             markdown: text,
@@ -112,25 +111,4 @@ import UIKit
         #expect(UIFont(name: resolvedName, size: 16) != nil)
     }
 
-    @Test("Body weight exposes five real settings")
-    func bodyWeightHasFiveLevels() {
-        #expect(TextReaderFontWeight.allCases.map(\.rawValue) == [
-            "light", "regular", "medium", "semibold", "bold"
-        ])
-
-        let regular = TextReaderFontResolver.font(for: "System", size: 16, weight: .regular)
-        let bold = TextReaderFontResolver.font(for: "System", size: 16, weight: .bold)
-        #expect(descriptorWeight(of: bold) > descriptorWeight(of: regular))
-    }
-
-    private func descriptorWeight(of font: UIFont) -> CGFloat {
-        guard
-            let traits = font.fontDescriptor.object(forKey: .traits)
-                as? [UIFontDescriptor.TraitKey: Any],
-            let value = traits[.weight] as? NSNumber
-        else {
-            return UIFont.Weight.regular.rawValue
-        }
-        return CGFloat(truncating: value)
-    }
 }

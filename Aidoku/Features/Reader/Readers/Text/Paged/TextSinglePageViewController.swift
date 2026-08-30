@@ -5,12 +5,25 @@
 
 import UIKit
 
+/// Paged text reserves taps for immediate page turns while retaining the
+/// native long-press selection gestures provided by UITextView.
+final class PagedSelectableTextView: UITextView {
+    static func allowsGesture(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        !(gestureRecognizer is UITapGestureRecognizer)
+    }
+
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard Self.allowsGesture(gestureRecognizer) else { return false }
+        return super.gestureRecognizerShouldBegin(gestureRecognizer)
+    }
+}
+
 class TextSinglePageViewController: UIViewController {
     let page: TextPage
     weak var parentReader: ReaderPagedTextViewController?
 
     private lazy var textView: UITextView = {
-        let tv = UITextView()
+        let tv = PagedSelectableTextView()
         tv.isEditable = false
         tv.isSelectable = true
         tv.isScrollEnabled = false

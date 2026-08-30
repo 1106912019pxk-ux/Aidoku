@@ -581,12 +581,6 @@
 "TEXT_READER_PAGED" = "Paged";
 "TEXT_READER_SCROLL" = "Scroll";
 "TEXT_FONT_FAMILY" = "Font";
-"TEXT_FONT_WEIGHT" = "Body Weight";
-"TEXT_FONT_WEIGHT_LIGHT" = "Light";
-"TEXT_FONT_WEIGHT_REGULAR" = "Regular";
-"TEXT_FONT_WEIGHT_MEDIUM" = "Medium";
-"TEXT_FONT_WEIGHT_SEMIBOLD" = "Semibold";
-"TEXT_FONT_WEIGHT_BOLD" = "Bold";
 "TEXT_FONT_SIZE" = "Font Size";
 "TEXT_LINE_SPACING" = "Line Spacing";
 "TEXT_HORIZONTAL_PADDING" = "Horizontal Padding";

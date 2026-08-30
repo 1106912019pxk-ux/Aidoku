@@ -147,7 +147,6 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         }
         for key in [
             "Reader.textFontSize",
-            "Reader.textFontWeight",
             "Reader.textLineSpacing",
             "Reader.textHorizontalPadding",
             "Reader.textLeftMargin",
@@ -197,7 +196,6 @@ class ReaderPagedTextViewController: BaseObservingViewController {
         if let fontFamily = UserDefaults.standard.string(forKey: "Reader.textFontFamily") {
             config.fontName = fontFamily
         }
-        config.fontWeight = .current
         config.theme = .current
 
         view.backgroundColor = config.theme.backgroundColor

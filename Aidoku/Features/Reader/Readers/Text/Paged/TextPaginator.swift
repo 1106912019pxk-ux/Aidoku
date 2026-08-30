@@ -48,11 +48,10 @@ struct PaginationConfig {
     var topPadding: CGFloat = 32
     var bottomPadding: CGFloat = 32
     var firstLineIndent: CGFloat = 0
-    var fontWeight: TextReaderFontWeight = .regular
     var theme: TextReaderTheme = .current
 
     var font: UIFont {
-        TextReaderFontResolver.font(for: fontName, size: fontSize, weight: fontWeight)
+        TextReaderFontResolver.font(for: fontName, size: fontSize)
     }
 
     var paragraphStyle: NSParagraphStyle {
@@ -257,7 +256,7 @@ class TextPaginator {
         let headerFont = TextReaderFontResolver.font(
             for: config.fontName,
             size: headerFontSize,
-            weight: config.fontWeight.emphasized
+            bold: true
         )
 
         let style = NSMutableParagraphStyle()
@@ -330,11 +329,7 @@ class TextPaginator {
         var traits: UIFontDescriptor.SymbolicTraits = []
 
         if intent.contains(.stronglyEmphasized) {
-            font = TextReaderFontResolver.font(
-                for: config.fontName,
-                size: font.pointSize,
-                weight: config.fontWeight.emphasized
-            )
+            traits.insert(.traitBold)
         }
         if intent.contains(.emphasized) {
             traits.insert(.traitItalic)

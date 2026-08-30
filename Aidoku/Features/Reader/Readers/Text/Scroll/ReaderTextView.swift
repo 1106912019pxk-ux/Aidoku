@@ -13,7 +13,6 @@ struct ReaderTextView: View {
    let source: AidokuRunner.Source?
    let text: String?
    let fontFamily: String
-   let fontWeight: TextReaderFontWeight
    let fontSize: Double
    let lineSpacing: Double
    let horizontalPadding: Double
@@ -29,7 +28,6 @@ struct ReaderTextView: View {
        source: AidokuRunner.Source?,
        page: Page?,
        fontFamily: String,
-       fontWeight: TextReaderFontWeight,
        fontSize: Double,
        lineSpacing: Double,
        horizontalPadding: Double,
@@ -43,7 +41,6 @@ struct ReaderTextView: View {
    ) {
        self.source = source
        self.fontFamily = fontFamily
-       self.fontWeight = fontWeight
        self.fontSize = fontSize
        self.lineSpacing = lineSpacing
        self.horizontalPadding = horizontalPadding
@@ -90,7 +87,6 @@ struct ReaderTextView: View {
            MarkdownView(
                text,
                fontFamily: fontFamily,
-               fontWeight: fontWeight,
                fontSize: fontSize,
                lineSpacing: lineSpacing,
                horizontalPadding: horizontalPadding,

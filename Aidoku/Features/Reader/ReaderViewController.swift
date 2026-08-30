@@ -1126,6 +1126,7 @@ extension ReaderViewController {
         configureAutoScrollingReaderIfNeeded()
         configureDictionaryOverlayInteractionMode()
         configureDictionaryOverlayTapHandler()
+        configureBarToggleTapGestures()
         updateAutoScrollButton()
         updateSpeechButton()
         disableSwipeGestures()
@@ -1441,7 +1442,12 @@ extension ReaderViewController: ReaderHoldingDelegate {
         let singleTapLookupEnabled = isDictionarySingleTapLookupActiveForCurrentChapter
         configureNavigationBarDismissTapGesture(enabled: singleTapLookupEnabled)
 
-        if !singleTapLookupEnabled, !UserDefaults.standard.bool(forKey: "Reader.disableDoubleTap") {
+        let usesImmediatePagedTextTaps = reader is ReaderPagedTextViewController
+        if
+            !usesImmediatePagedTextTaps,
+            !singleTapLookupEnabled,
+            !UserDefaults.standard.bool(forKey: "Reader.disableDoubleTap")
+        {
             let doubleTap = UITapGestureRecognizer(
                 target: self,
                 action: nil
@@ -1900,28 +1906,6 @@ extension ReaderViewController {
 }
 
 // MARK: - UIGestureRecognizerDelegate
-@MainActor
-enum ReaderTapGesturePolicy {
-    static func allowsSimultaneousTextTap(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        guard
-            let tap = gestureRecognizer as? UITapGestureRecognizer,
-            tap.numberOfTapsRequired == 1,
-            tap.numberOfTouchesRequired == 1
-        else {
-            return false
-        }
-
-        var view = gestureRecognizer.view
-        while let currentView = view {
-            if let textView = currentView as? UITextView {
-                return textView.isSelectable && textView.isUserInteractionEnabled
-            }
-            view = currentView.superview
-        }
-        return false
-    }
-}
-
 extension ReaderViewController: UIGestureRecognizerDelegate {
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
@@ -1946,27 +1930,6 @@ extension ReaderViewController: UIGestureRecognizerDelegate {
             view = currentView.superview
         }
         return true
-    }
-
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool {
-        let textViewGesture: UIGestureRecognizer
-        if gestureRecognizer === barToggleTapGesture {
-            textViewGesture = otherGestureRecognizer
-        } else if otherGestureRecognizer === barToggleTapGesture {
-            textViewGesture = gestureRecognizer
-        } else {
-            return false
-        }
-
-        // A selectable UITextView owns tap recognizers that activate its text
-        // interaction. On a newly displayed page, that recognizer can otherwise
-        // win the first tap and prevent the reader tap-zone recognizer from
-        // turning the page. Only share ordinary taps; long-press selection and
-        // page-view pan gestures keep their normal exclusive behavior.
-        return ReaderTapGesturePolicy.allowsSimultaneousTextTap(textViewGesture)
     }
 }
 
