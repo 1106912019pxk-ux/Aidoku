@@ -87,9 +87,9 @@
 ## 验证证据
 
 - 自动检查及结果：`git diff --check` 通过；`pwsh -NoProfile -File scripts/check-git-ownership.ps1` 通过且仓库所有者为 `AMADEUS\Lain`；36 个受影响 Swift 文件通过括号、尾随空白和冲突标记扫描；20 项能力入口契约扫描通过；plist XML、后台 `audio` 唯一声明、自动阅读/朗读本地化键唯一性均通过；未跟踪文件名未发现 IPA、签名或凭据。GitHub Actions 运行 `33265963550` 已通过 Xcode 26.6 Release archive、IPA 压缩和 artifact 上传。
-- 本轮反馈修复检查：5 个受影响 Swift 文件通过冲突标记和括号结构扫描，7 项聚焦行为入口检查通过；44 个个人需求编号全部唯一；确认未新增左右独立边距键、滚动文字阅读器未加入常驻状态；`git diff --check` 和 Git 所有权检查通过。Windows 当前没有 Swift/Xcode 工具链，因此本轮代码尚未重新编译，也未触发云端构建或 IPA。
+- 本轮反馈修复检查：5 个受影响 Swift 文件通过冲突标记和括号结构扫描，7 项聚焦行为入口检查通过；44 个个人需求编号全部唯一；确认未新增左右独立边距键、滚动文字阅读器未加入常驻状态；`git diff --check` 和 Git 所有权检查通过。提交 `d5dd3739` 已由 GitHub Actions `33294692786` 在 Xcode 26.6 下完成 Release archive、IPA 压缩和 artifact 上传；artifact ID `9727151162`，下载 IPA 为 11,811,325 字节，SHA-256 `8c1777ab0cc98fbc3f1dc234cc526a846f7006c0ab011cdbc0d4ff9ec659c9cd`，应用主二进制和 `Info.plist` 均存在且不含签名描述文件。真机行为仍待集中验收。
 - 人工验收：待最终集中验收。
-- 尚未验证：Swift Testing/XCTest、SwiftLint、成功 artifact 的本地解包、iPhone 与 iPad 行为。
+- 尚未验证：Swift Testing/XCTest、SwiftLint，以及 iPhone 与 iPad 上的实际交互行为；最新成功 artifact 已完成本地下载和解包结构复核。
 
 ## 交接
 

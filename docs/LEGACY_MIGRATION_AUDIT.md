@@ -50,9 +50,11 @@ PICA 和 E-Hentai 账户收藏按钮依赖旧项目中分别实现了通知协�
 
 ## 构建验证与尚未完成项
 
+- GitHub Actions 运行 `33294692786`：提交 `d5dd373950003efb1e79db34e0c777b01f51b2c8` 在 macOS 26 / Xcode 26.6 上通过 Release archive、IPA 压缩和 artifact 上传；运行耗时 11 分钟，结论为 `success`。
+- 最新 artifact：ID `9727151162`，名称 `Aidoku-iOS_nightly-d5dd373.ipa`，GitHub artifact 大小 11,771,988 字节，过期时间 2026-11-28。下载后的 IPA 为 11,811,325 字节，SHA-256 `8c1777ab0cc98fbc3f1dc234cc526a846f7006c0ab011cdbc0d4ff9ec659c9cd`；包含 `Payload/Aidoku.app/Aidoku` 和 `Info.plist`，不含 `embedded.mobileprovision`，符合无签名包预期。
 - Windows 已完成：Git 所有权检查、diff 空白检查、Swift 文件结构/关键符号扫描、plist XML 解析和本地化键检查。
 - GitHub Actions 运行 `33265963550`：macOS 26、Xcode 26.6、Release archive、无签名 IPA 压缩和 artifact 上传全部通过；产物 `Aidoku-iOS_nightly-140cce2.ipa`，artifact ID `9718720054`，GitHub 显示 11.2 MB，SHA-256 `9da1d8918dcf3acbaa19613982223528bfb51d89bf2c9902ee297734d60ee2cc`。
 - 构建中依据明确诊断修复了 `ReaderSpeech.swift` 的 SwiftUI 导入、`if` 表达式控制流和错误描述显式返回兼容问题；没有用猜测性改动绕过编译器。
-- 尚未完成：Swift Testing/XCTest、SwiftLint，以及成功 artifact 的本地下载解包复核。
+- 尚未完成：Swift Testing/XCTest 和 SwiftLint；最新成功 artifact 已完成本地下载、ZIP 结构与主程序文件复核。
 - 尚未完成：PICA/E-Hentai 定制来源联调、Microsoft WebSocket、Apple 降级、后台媒体、EPUB/TXT 跨章、字体、旋转/双页、大 TXT 导入。
-- 尚未完成：最终一次 iPhone 17（iOS 26）和 iPad Air 4 集中验收。
+- 尚未完成：在 iPhone 17（iOS 26）和 iPad Air 4 上集中复验分页状态、双页居中、分页转滚动自动阅读、长按文字选择和通用设置图标；通过后再把本轮需求标记为真机完成。
