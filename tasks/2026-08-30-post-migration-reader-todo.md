@@ -2,7 +2,7 @@
 
 - 任务 ID：post-migration-reader-20260830
 - 类型：BUG 修复 / 功能实现 / 回归收敛
-- 状态：TXT 分页字体和左右独立边距已真机验收；分页交互已回退到上游 Aidoku 的非交互正文方案，等待与下一轮一起真机复验
+- 状态：TXT 分页字体和左右独立边距已真机验收；分页正文保持上游非交互方案，并仅对分页文字取消无意义的双击等待，等待真机复验
 - 当前分支：`integration/legacy-capability-migration`
 
 ## 用户最终得到的结果
@@ -18,7 +18,7 @@
 
 - 用户已在真机验收 TXT 分页字体和左右独立边距，结果通过。
 - 两轮分页选择补丁均未通过真机验收：第一版让父级单击和 `UITextView` 手势并行，出现明显延迟且长按不可用；第二版过滤显式 tap recognizer，仍被系统文字交互吞掉新页面第一次点击，并保留了双击选词。
-- 当前处理精确恢复上游 Aidoku 的分页交互：分页 `UITextView.isUserInteractionEnabled = false`，不再参与任何触摸或选择；父级单击/双击手势配置也恢复上游逻辑。
+- 当前分页正文保持上游 Aidoku 的 `UITextView.isUserInteractionEnabled = false`，不再参与任何触摸或选择；父级手势只增加一项明确差异：分页文字不创建 dummy double-tap recognizer，因此单击无需等待双击失败。
 - 分页选择只有在未来引入独立、明确的“阅读/选择”状态后才可能重新评估，已降为低优先级 TODO；当前不再尝试让文字选择与翻页手势竞争。
 - 滚动文字原有选择行为不变；漫画及其他阅读器继续使用上游既有单击/双击手势配置。
 - `LXGWWenKaiGBScreen` 是单一 Regular face。五档设置无法从该字体文件得到真实粗细变化；用户决定回退该功能，改为手动导入其他实际 face。
@@ -42,6 +42,7 @@
 ## 相关代码
 
 - 分页 tap zone：`Aidoku/Features/Reader/ReaderViewController.swift`
+- 点击延迟策略测试：`AidokuTests/ReaderTapDelayPolicyTests.swift`
 - 分页文字页面：`Aidoku/Features/Reader/Readers/Text/Paged/TextSinglePageViewController.swift`、`TextDoublePageViewController.swift`
 - 分页排版：`Aidoku/Features/Reader/Readers/Text/Paged/TextPaginator.swift`
 - 滚动排版：`Aidoku/Features/Reader/Page/MarkdownView.swift`
@@ -51,7 +52,7 @@
 
 TXT 字体修复只让本地 `.txt/...` 章节走纯文本 attributed-string 路径；EPUB 继续走 CommonMark，以保留标题、列表、图片和代码语义。左右独立边距只作为每页文字排版的额外增量，不改写旧水平填充值或 iPad 双页外侧安全区。
 
-分页交互恢复上游 Aidoku：单页和双页正文均使用普通 `UITextView`，但关闭 `isUserInteractionEnabled`，让触摸直接穿透到父级 tap zone；同时移除分页专用即时点击分支和 reader 装载后的额外手势重建。分页文字因此不再支持选择，滚动文字不受影响。
+分页正文沿用上游 Aidoku：单页和双页均使用普通 `UITextView`，关闭 `isUserInteractionEnabled`，让触摸直接穿透到父级 tap zone。父控制器仅增加两项配套差异：分页文字不等待双击判定，并在 reader 类型完成切换后重建点击识别器，确保初次进入与分页/滚动切换都使用正确策略；漫画及其他阅读器仍完整保留上游双击等待和“禁用双击缩放”设置语义。分页文字不支持选择，滚动文字不受影响。
 
 正文字重和相关默认值、设置、本地化、解析逻辑与测试全部回退。字体选择仍保存具体 PostScript face，因此分别导入 Light、Regular、Medium 文件后可以手动切换真实字形。
 
@@ -63,11 +64,12 @@ TXT 字体修复只让本地 `.txt/...` 章节走纯文本 attributed-string 路
 - 2026-08-30：用户确认分页改为单击立即翻页且只保留长按选文；正文字重完整回退，以独立字体文件替代。
 - 2026-08-31：候选提交 `d1651d2d` 云端 archive 成功，但真机仍出现新页面第一次点击不翻页、双击选词；确认不是打错版本，而是系统文字交互仍参与手势竞争。
 - 2026-08-31：用户终止分页选择实验，以翻页绝对正确为最高优先级；分页交互和父级点击手势恢复上游 Aidoku 状态，分页选择降为低优先级 TODO。
+- 2026-08-31：真机确认完全恢复上游后分页点击仍有明显延迟；源码对比确认上游通过 `tap.require(toFail: doubleTap)` 延迟 tap zone，而最新回退删除了分页文字豁免。现恢复仅分页文字即时点击，漫画双击缩放不变。
 
 ## 验证状态
 
 - 已有真机证据：TXT 分页字体、左右独立边距通过；漫画进度暂未发现问题，仍需继续观察。
-- 当前代码检查：Git 所有权检查和 `git diff --check` 通过；单双页正文的触摸穿透契约存在，父级 bar-toggle 手势函数与 `upstream/main` 一致，reader 装载后的自定义手势重建已移除，分页选择实验符号无残留；`LocalFileDataManager.swift` 与稳定锚点 `d5dd3739` 的封面实现静态一致。
+- 当前代码检查：Git 所有权检查和 `git diff --check` 通过；将唯一策略块归一化后，bar-toggle 函数其余内容与 `upstream/main` 完全一致；上游/当前 A/B 条件矩阵证明只有“分页文字、默认设置”从等待变为立即，漫画默认、禁用双击和单击查词三种行为均与上游一致；reader 类型确定后的手势重建契约存在，漫画设置和漫画 reader 文件没有改动；单双页正文触摸穿透存在，分页选择实验符号无残留；新增 4 项策略测试但当前 Windows 无法执行 UIKit/Xcode 测试；`LocalFileDataManager.swift` 与稳定锚点 `d5dd3739` 的封面实现静态一致。
 - 当前 Windows 环境无法运行 Xcode、Swift Testing 或 iOS Simulator；打包由用户在本轮提交推送后从 GitHub Actions 页面手动触发。
 - 当前分页交互回退、封面回退和字重回退均尚未真机验收。
 

@@ -1126,6 +1126,9 @@ extension ReaderViewController {
         configureAutoScrollingReaderIfNeeded()
         configureDictionaryOverlayInteractionMode()
         configureDictionaryOverlayTapHandler()
+        // The reader type is now final, so rebuild the parent tap recognizers
+        // with the correct paged-text versus manga delay policy.
+        configureBarToggleTapGestures()
         updateAutoScrollButton()
         updateSpeechButton()
         disableSwipeGestures()
@@ -1438,7 +1441,12 @@ extension ReaderViewController: ReaderHoldingDelegate {
         let singleTapLookupEnabled = isDictionarySingleTapLookupActiveForCurrentChapter
         configureNavigationBarDismissTapGesture(enabled: singleTapLookupEnabled)
 
-        if !singleTapLookupEnabled, !UserDefaults.standard.bool(forKey: "Reader.disableDoubleTap") {
+        let shouldDeferSingleTap = ReaderTapGesturePolicy.shouldDeferSingleTapForDoubleTap(
+            isPagedTextReader: reader is ReaderPagedTextViewController,
+            singleTapLookupEnabled: singleTapLookupEnabled,
+            doubleTapDisabled: UserDefaults.standard.bool(forKey: "Reader.disableDoubleTap")
+        )
+        if shouldDeferSingleTap {
             let doubleTap = UITapGestureRecognizer(
                 target: self,
                 action: nil
@@ -1897,6 +1905,18 @@ extension ReaderViewController {
 }
 
 // MARK: - UIGestureRecognizerDelegate
+enum ReaderTapGesturePolicy {
+    /// Paged text has no double-tap action and must turn pages immediately.
+    /// Other readers retain Aidoku's upstream double-tap waiting behavior.
+    static func shouldDeferSingleTapForDoubleTap(
+        isPagedTextReader: Bool,
+        singleTapLookupEnabled: Bool,
+        doubleTapDisabled: Bool
+    ) -> Bool {
+        !isPagedTextReader && !singleTapLookupEnabled && !doubleTapDisabled
+    }
+}
+
 extension ReaderViewController: UIGestureRecognizerDelegate {
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
