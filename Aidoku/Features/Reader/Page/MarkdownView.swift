@@ -85,8 +85,10 @@ struct MarkdownView: View {
         .markdownTextStyle {
             FontFamily(.custom(resolvedFontName))
             FontSize(fontSize)
+            if usesSystemFont {
+                FontWeight(systemFontWeight)
+            }
         }
-        .fontWeight(usesSystemFont ? systemFontWeight : nil)
         .markdownBlockStyle(\.paragraph) { configuration in
             configuration.label
                 .lineSpacing(lineSpacing)
