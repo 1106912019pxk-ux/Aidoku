@@ -2,8 +2,8 @@
 
 - 任务 ID：post-migration-reader-20260830
 - 类型：BUG 修复 / 功能实现 / 回归收敛
-- 状态：本轮真机验收通过；分页稳定交互候选 `bc7fdbfe` 获准作为稳定版本合并到 `main`
-- 当前分支：`integration/legacy-capability-migration`
+- 状态：本轮真机验收通过；分页稳定交互候选 `bc7fdbfe` 已作为稳定版本合并到 `main`
+- 当前分支：`main`（由 `integration/legacy-capability-migration` 验收合并）
 
 ## 用户最终得到的结果
 
@@ -81,5 +81,5 @@ TXT 字体修复只让本地 `.txt/...` 章节走纯文本 attributed-string 路
 - 真机未接受的选择候选：`d1651d2d`；其分页文字专用即时点击/长按选择策略已回退，不得作为交付版本。
 - 延迟仍未接受的回退候选：`3591f531`；不得作为交付版本。
 - 已接受的稳定代码候选：`bc7fdbfe`；保留 TXT 分页字体、左右独立边距和漫画进度修复，本地封面恢复与正文字重维持回退，分页文字采用非交互正文与即时 tap zone。
-- 用户已授权将本轮已验收状态作为稳定版本合并到 `main`。
+- 本轮已验收状态和验收记录均已合并到本地 `main`。
 - 新任务继续前必读：本任务卡、`docs/PERSONAL_REQUIREMENTS.md`、`tasks/2026-08-28-legacy-capability-migration.md`、`tasks/2026-08-30-manga-progress-local-cover-regressions.md` 和当前 `git diff`。
