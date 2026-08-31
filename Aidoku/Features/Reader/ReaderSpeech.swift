@@ -469,6 +469,45 @@ enum ReaderSpeechSegmenter {
     }
 }
 
+struct ReaderSpeechNextBatchRecoveryState {
+    private enum Phase: Equatable {
+        case idle
+        case loading(afterChapterKey: String)
+        case awaitingForegroundRetry(afterChapterKey: String)
+    }
+
+    private var phase: Phase = .idle
+
+    mutating func beginLoading(after chapterKey: String) {
+        phase = .loading(afterChapterKey: chapterKey)
+    }
+
+    @discardableResult
+    mutating func deferUntilForeground() -> Bool {
+        guard case .loading(let chapterKey) = phase else { return false }
+        phase = .awaitingForegroundRetry(afterChapterKey: chapterKey)
+        return true
+    }
+
+    mutating func complete() {
+        phase = .idle
+    }
+
+    /// Scene activation is also a recovery boundary when iOS suspended the
+    /// async load without first invoking the background-task expiration block.
+    mutating func takeForegroundRetryChapterKey() -> String? {
+        let chapterKey: String
+        switch phase {
+            case .loading(let key), .awaitingForegroundRetry(let key):
+                chapterKey = key
+            case .idle:
+                return nil
+        }
+        phase = .idle
+        return chapterKey
+    }
+}
+
 @MainActor
 final class ReaderSpeechController: NSObject, ObservableObject {
     enum State: Equatable {
@@ -502,6 +541,7 @@ final class ReaderSpeechController: NSObject, ObservableObject {
     private var notificationObservers: [NSObjectProtocol] = []
     private var remoteCommandTargets: [(MPRemoteCommand, Any)] = []
     private var backgroundTask = UIBackgroundTaskIdentifier.invalid
+    private var nextBatchRecovery = ReaderSpeechNextBatchRecoveryState()
     private var pauseRequested = false
     private var usingSystemFallback = false
 
@@ -596,6 +636,7 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         units = []
         prefetchedAudio = [:]
         unitIndex = 0
+        nextBatchRecovery.complete()
         progressText = ""
         updateState(.idle)
         endBackgroundTask()
@@ -626,9 +667,10 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         let engine = ReaderMicrosoftSpeechEngine(voice: settings.voice)
         let cacheKey = "\(engine.cacheIdentifier)|\(settings.rate)|\(unit.text)"
         synthesisTask?.cancel()
-        beginBackgroundTask()
+        let backgroundTaskID = beginBackgroundTask()
         synthesisTask = Task { [weak self] in
             guard let self else { return }
+            defer { endBackgroundTask(backgroundTaskID) }
             do {
                 let data: Data
                 if let prefetched = prefetchedAudio.removeValue(forKey: unitIndex),
@@ -646,12 +688,11 @@ final class ReaderSpeechController: NSObject, ObservableObject {
                 }
                 guard !Task.isCancelled else { return }
                 try beginPlayback(data: data)
-                endBackgroundTask()
                 prefetchUpcomingUnits(after: unitIndex, settings: settings)
             } catch is CancellationError {
-                endBackgroundTask()
+                // Cancellation is expected when playback stops or a suspended
+                // cross-chapter load is replaced by its foreground retry.
             } catch {
-                endBackgroundTask()
                 guard !Task.isCancelled else { return }
                 if settings.allowsSystemFallback {
                     usingSystemFallback = true
@@ -715,24 +756,50 @@ final class ReaderSpeechController: NSObject, ObservableObject {
             finish()
             return
         }
+        loadNextBatch(after: chapterKey, using: loadMoreSegments, settings: settings)
+    }
+
+    private func loadNextBatch(
+        after chapterKey: String,
+        using loadMoreSegments: @escaping (String) async -> [ReaderSpeechSegment],
+        settings: ReaderSpeechSettingsStore
+    ) {
+        nextBatchRecovery.beginLoading(after: chapterKey)
         updateState(.loading)
         progressText = readerSpeechLocalized("MICROSOFT_TTS_LOADING_NEXT", fallback: "Loading next chapter")
         synthesisTask?.cancel()
-        beginBackgroundTask()
+        let backgroundTaskID = beginBackgroundTask()
         synthesisTask = Task { [weak self] in
             guard let self else { return }
+            defer { endBackgroundTask(backgroundTaskID) }
             let additional = await loadMoreSegments(chapterKey)
-            guard !Task.isCancelled else {
-                endBackgroundTask()
+            guard !Task.isCancelled else { return }
+            let nextUnits = ReaderSpeechSegmenter.chunks(from: additional)
+            guard !nextUnits.isEmpty else {
+                synthesisTask = nil
+                if UIApplication.shared.applicationState != .active {
+                    nextBatchRecovery.deferUntilForeground()
+                } else {
+                    nextBatchRecovery.complete()
+                    finish()
+                }
                 return
             }
-            let nextUnits = ReaderSpeechSegmenter.chunks(from: additional)
-            guard !nextUnits.isEmpty else { finish(); return }
             units.append(contentsOf: nextUnits)
             synthesisTask = nil
-            endBackgroundTask()
+            nextBatchRecovery.complete()
             playCurrentUnit(settings: settings)
         }
+    }
+
+    func recoverAfterSceneActivation(settings: ReaderSpeechSettingsStore = .shared) {
+        guard
+            let chapterKey = nextBatchRecovery.takeForegroundRetryChapterKey(),
+            let loadMoreSegments
+        else { return }
+        synthesisTask?.cancel()
+        synthesisTask = nil
+        loadNextBatch(after: chapterKey, using: loadMoreSegments, settings: settings)
     }
 
     private func beginPlayback(data: Data) throws {
@@ -789,6 +856,8 @@ final class ReaderSpeechController: NSObject, ObservableObject {
 
     private func finish() {
         player = nil
+        synthesisTask = nil
+        nextBatchRecovery.complete()
         progressText = readerSpeechLocalized("MICROSOFT_TTS_CHAPTER_FINISHED", fallback: "Reading complete")
         updateState(.idle)
         endBackgroundTask()
@@ -797,6 +866,8 @@ final class ReaderSpeechController: NSObject, ObservableObject {
     }
 
     private func fail(_ error: Error) {
+        synthesisTask = nil
+        nextBatchRecovery.complete()
         updateState(.failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription))
         player = nil
         clearRemoteControls()
@@ -902,16 +973,26 @@ final class ReaderSpeechController: NSObject, ObservableObject {
         center.playbackState = state == .playing ? .playing : .paused
     }
 
-    private func beginBackgroundTask() {
+    @discardableResult
+    private func beginBackgroundTask() -> UIBackgroundTaskIdentifier {
         endBackgroundTask()
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Reader speech synthesis") { [weak self] in
-            Task { @MainActor [weak self] in self?.endBackgroundTask() }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if nextBatchRecovery.deferUntilForeground() {
+                    synthesisTask?.cancel()
+                    synthesisTask = nil
+                }
+                endBackgroundTask()
+            }
         }
+        return backgroundTask
     }
 
-    private func endBackgroundTask() {
-        guard backgroundTask != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(backgroundTask)
+    private func endBackgroundTask(_ identifier: UIBackgroundTaskIdentifier? = nil) {
+        let identifier = identifier ?? backgroundTask
+        guard identifier != .invalid, identifier == backgroundTask else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
         backgroundTask = .invalid
     }
 }
