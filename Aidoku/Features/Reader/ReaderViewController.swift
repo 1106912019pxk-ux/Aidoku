@@ -452,6 +452,7 @@ class ReaderViewController: BaseObservingViewController {
                 self.sessionStartDate = Date.now
                 self.sessionLastInteraction = nil
             }
+            self.speechController.recoverAfterSceneActivation()
             if self.speechController.isActive, let segment = self.speechController.currentSegment {
                 self.revealSpeechSegment(segment)
             }

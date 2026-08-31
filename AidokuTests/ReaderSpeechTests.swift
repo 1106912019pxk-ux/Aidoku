@@ -77,4 +77,32 @@ import Testing
         #expect(first == second)
         #expect(first.range(of: "^[0-9A-F]{64}$", options: .regularExpression) != nil)
     }
+
+    @Test("Next speech batch retries after foreground activation")
+    func nextBatchRetriesAfterForegroundActivation() {
+        var state = ReaderSpeechNextBatchRecoveryState()
+        state.beginLoading(after: "chapter-4")
+
+        #expect(state.takeForegroundRetryChapterKey() == "chapter-4")
+        #expect(state.takeForegroundRetryChapterKey() == nil)
+    }
+
+    @Test("Expired next speech batch retains its chapter anchor")
+    func expiredNextBatchRetainsAnchor() {
+        var state = ReaderSpeechNextBatchRecoveryState()
+        state.beginLoading(after: "chapter-4")
+
+        #expect(state.deferUntilForeground())
+        #expect(state.takeForegroundRetryChapterKey() == "chapter-4")
+    }
+
+    @Test("Completed or stopped speech batch does not restart")
+    func completedBatchDoesNotRestart() {
+        var state = ReaderSpeechNextBatchRecoveryState()
+        state.beginLoading(after: "chapter-4")
+        state.complete()
+
+        #expect(!state.deferUntilForeground())
+        #expect(state.takeForegroundRetryChapterKey() == nil)
+    }
 }
