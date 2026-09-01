@@ -10,6 +10,77 @@ import CoreData
 import Foundation
 import ZIPFoundation
 
+enum LocalEbookCoverRecovery {
+    static func resolvedFileURL(for storedURL: URL, documentsDirectory: URL) -> URL {
+        guard storedURL.scheme == "aidoku-image" else { return storedURL }
+        let relativePath = storedURL.host.map { $0 + storedURL.path } ?? storedURL.path
+        return relativePath.split(separator: "/").reduce(documentsDirectory) {
+            $0.appendingPathComponent(String($1))
+        }
+    }
+
+    static func stableURL(for coverFileURL: URL, documentsDirectory: URL) -> URL? {
+        let documentsPath = documentsDirectory.standardizedFileURL.path
+        let coverPath = coverFileURL.standardizedFileURL.path
+        let documentsPrefix = documentsPath + "/"
+        guard coverPath.hasPrefix(documentsPrefix) else { return nil }
+
+        var components = URLComponents()
+        components.scheme = "aidoku-image"
+        components.host = ""
+        components.path = "/" + String(coverPath.dropFirst(documentsPrefix.count))
+        return components.url
+    }
+
+    static func mangaFolder(for mangaId: String, in localFolder: URL) -> URL? {
+        let normalizedId = mangaId.normalized
+        return localFolder.contents.first {
+            $0.isDirectory && $0.lastPathComponent.normalized == normalizedId
+        }
+    }
+
+    static func existingCoverFile(in mangaFolder: URL) -> URL? {
+        mangaFolder.contents
+            .filter {
+                !$0.isDirectory
+                    && $0.deletingPathExtension().lastPathComponent.caseInsensitiveCompare("cover") == .orderedSame
+                    && LocalFileManager.allowedImageExtensions.contains($0.pathExtension.lowercased())
+            }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            .first
+    }
+
+    static func recoverCoverFile(in mangaFolder: URL) -> URL? {
+        if let existingCover = existingCoverFile(in: mangaFolder) {
+            return existingCover
+        }
+
+        let epubFiles = mangaFolder.contents
+            .filter { $0.pathExtension.lowercased() == "epub" }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        for epubFile in epubFiles {
+            guard
+                let coverData = EpubParser.parse(url: epubFile)?.coverData,
+                let coverImage = PlatformImage(data: coverData),
+                let pngData = coverImage.pngData()
+            else {
+                continue
+            }
+
+            let coverURL = mangaFolder.appendingPathComponent("cover.png")
+            do {
+                try pngData.write(to: coverURL, options: .atomic)
+                return coverURL
+            } catch {
+                LogManager.logger.error(
+                    "Failed to rebuild local EPUB cover for \(mangaFolder.lastPathComponent): \(error.localizedDescription)"
+                )
+            }
+        }
+        return nil
+    }
+}
+
 /// Manages local files stored in the documents directory for the local files source.
 actor LocalFileManager {
     static let shared = LocalFileManager()
@@ -40,6 +111,43 @@ actor LocalFileManager {
 }
 
 extension LocalFileManager {
+    func recoverCover(mangaId: String) async -> URL? {
+        let documentsDirectory = FileManager.default.documentDirectory
+        let localFolder = documentsDirectory.appendingPathComponent("Local", isDirectory: true)
+        let identifier = MangaIdentifier(sourceKey: LocalSourceRunner.sourceKey, mangaKey: mangaId)
+        let storedCover = await CoreDataManager.shared.container.performBackgroundTask { context in
+            CoreDataManager.shared.getManga(mangaId: identifier, context: context)?.cover
+        }
+        if
+            let storedCover,
+            let storedURL = URL(string: storedCover),
+            LocalEbookCoverRecovery.resolvedFileURL(
+                for: storedURL,
+                documentsDirectory: documentsDirectory
+            ).exists
+        {
+            // A transient decode or cache failure must not replace a valid local/custom cover.
+            return nil
+        }
+        guard
+            let mangaFolder = LocalEbookCoverRecovery.mangaFolder(for: mangaId, in: localFolder),
+            let coverFileURL = LocalEbookCoverRecovery.recoverCoverFile(in: mangaFolder),
+            let stableURL = LocalEbookCoverRecovery.stableURL(
+                for: coverFileURL,
+                documentsDirectory: documentsDirectory
+            )
+        else {
+            return nil
+        }
+
+        await CoreDataManager.shared.setCover(
+            mangaId: identifier,
+            coverUrl: stableURL.absoluteString,
+            original: true
+        )
+        return stableURL
+    }
+
     func analyzeTxt(url: URL, options: TxtImportOptions) throws -> TxtAnalysis {
         let accessGranted = url.startAccessingSecurityScopedResource()
         defer {

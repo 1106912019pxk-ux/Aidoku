@@ -33,9 +33,16 @@ enum CoverRecovery {
         return staleStatusCodes.contains(code)
     }
 
+    static func shouldRecover(from error: Error, identifier: MangaIdentifier) -> Bool {
+        identifier.sourceKey == LocalSourceRunner.sourceKey || shouldRecover(from: error)
+    }
+
     static func recover(from error: Error, identifier: MangaIdentifier) async -> URL? {
-        guard shouldRecover(from: error) else { return nil }
+        guard shouldRecover(from: error, identifier: identifier) else { return nil }
         guard await tracker.claim(identifier) else { return nil }
+        if identifier.sourceKey == LocalSourceRunner.sourceKey {
+            return await LocalFileManager.shared.recoverCover(mangaId: identifier.mangaKey)
+        }
         let stub = AidokuRunner.Manga(sourceKey: identifier.sourceKey, key: identifier.mangaKey, title: "")
         guard
             let newCover = await MangaManager.shared.resetCover(manga: stub),

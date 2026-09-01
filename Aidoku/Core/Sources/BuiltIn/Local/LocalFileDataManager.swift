@@ -419,6 +419,7 @@ extension LocalFileDataManager {
     // finds manga in db but not on disk and manga on disk but not in db, and fix broken manga covers
     func findMangaDiskChanges(mangaFolders: [URL]) -> (toRemove: Set<String>, toAdd: Set<String>) {
         let folderMangaIds = Set(mangaFolders.map { $0.lastPathComponent.normalized })
+        let documentsDirectory = FileManager.default.documentDirectory
 
         // fetch all local manga objects from db
         let coreDataManga: [MangaObject] = {
@@ -436,17 +437,34 @@ extension LocalFileDataManager {
                 guard !toRemove.contains($0.id) else { return false }
                 // check if cover url is nil or doesn't exist on disk
                 guard let coverUrl = $0.cover, let url = URL(string: coverUrl) else { return true }
-                return !url.exists
+                return !LocalEbookCoverRecovery.resolvedFileURL(
+                    for: url,
+                    documentsDirectory: documentsDirectory
+                ).exists
             }
+        var repairedCover = false
         for manga in toFixCovers {
-            // try to find a cover image in the manga folder
-            for ext in LocalFileManager.allowedImageExtensions {
-                let coverPath = mangaFolders.first(where: { $0.lastPathComponent == manga.id })?
-                    .appendingPathComponent("cover.\(ext)")
-                if let coverPath, coverPath.exists {
-                    manga.cover = coverPath.absoluteString
-                    break
-                }
+            guard
+                let mangaFolder = mangaFolders.first(where: {
+                    $0.lastPathComponent.normalized == manga.id.normalized
+                }),
+                let coverPath = LocalEbookCoverRecovery.existingCoverFile(in: mangaFolder),
+                let stableURL = LocalEbookCoverRecovery.stableURL(
+                    for: coverPath,
+                    documentsDirectory: documentsDirectory
+                ),
+                manga.cover != stableURL.absoluteString
+            else {
+                continue
+            }
+            manga.cover = stableURL.absoluteString
+            repairedCover = true
+        }
+        if repairedCover {
+            do {
+                try context.save()
+            } catch {
+                LogManager.logger.error("Failed to persist repaired local cover URLs: \(error.localizedDescription)")
             }
         }
 

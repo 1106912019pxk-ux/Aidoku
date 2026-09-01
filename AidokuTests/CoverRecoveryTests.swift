@@ -36,6 +36,31 @@ struct CoverRecoveryTests {
         #expect(!CoverRecovery.shouldRecover(from: URLError(.notConnectedToInternet)))
     }
 
+    @Test func recoversLocalCoverFromAnyImageLoadFailure() {
+        let identifier = MangaIdentifier(
+            sourceKey: LocalSourceRunner.sourceKey,
+            mangaKey: "local-book"
+        )
+
+        #expect(
+            CoverRecovery.shouldRecover(
+                from: URLError(.fileDoesNotExist),
+                identifier: identifier
+            )
+        )
+    }
+
+    @Test func doesNotBroadenRemoteRecoveryErrors() {
+        let identifier = MangaIdentifier(sourceKey: "remote", mangaKey: "remote-book")
+
+        #expect(
+            !CoverRecovery.shouldRecover(
+                from: URLError(.notConnectedToInternet),
+                identifier: identifier
+            )
+        )
+    }
+
     private func pipelineError(statusCode: Int) -> ImagePipeline.Error {
         .dataLoadingFailed(error: DataLoader.Error.statusCodeUnacceptable(statusCode))
     }
