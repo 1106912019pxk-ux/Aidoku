@@ -2,7 +2,7 @@
 
 - 任务 ID：paged-text-selection-mode-20260901
 - 类型：功能实现 / 阅读器交互隔离
-- 状态：最小实现完成并通过静态检查，等待云端编译与真机验收
+- 状态：独立审查与云端编译打包通过，等待真机验收
 - 当前分支：`feature/paged-text-selection-mode`
 
 ## 用户目标
@@ -61,7 +61,11 @@
 - `git diff --check` 通过；`configureBarToggleTapGestures()` 和分页即时点击判定没有改动。
 - 10 项源码契约通过：单双页阅读态穿透、仅长按后启用、退出恢复、长按无失败依赖、分页点击仍即时、退出点击不串联翻页、语音锁组合、生命周期清理和测试存在。
 - 新增 3 项交互状态测试；既有 4 项 `ReaderTapDelayPolicyTests` 继续覆盖分页即时点击和漫画双击行为。
-- 当前 Windows 没有 Swift、SwiftLint、Xcode 或 iOS Simulator，测试尚未实际执行；未触发云端编译或打包。
+- 当前 Windows 没有 Swift、SwiftLint、Xcode 或 iOS Simulator；聚焦测试尚未实际执行，云端工作流只执行 Release archive，不执行测试 target。
 - 2026-09-02 独立复审重新从任务契约、完整差异和失败候选 `d1651d2d` 对照检查；9 项独立交互契约全部通过，未发现阻断编译的审查问题。
 - 独立复审确认 `configureBarToggleTapGestures()` 与当前稳定 HEAD 逐字一致；本次没有改变普通分页 tap recognizer 的构造、等待关系或漫画双击策略。
-- GitHub CLI 沙箱外 keyring 登录有效，当前仓库的手动工作流为 `Build and upload nightly ipa`；等待本次提交推送后执行云端 archive。
+- 功能提交 `09361cab1e943cebebbdad6988041403618574b9` 已推送至 `origin/feature/paged-text-selection-mode`。
+- GitHub Actions 运行 `33533020470` 使用 Xcode 26.6；Release archive、IPA 封装和 Artifact 上传全部成功，总耗时 11 分 14 秒。运行地址：`https://github.com/1106912019pxk-ux/Aidoku/actions/runs/33533020470`。
+- Artifact ID `9810909676`，名称 `Aidoku-iOS_nightly-09361ca.ipa`，服务端归档大小 11,785,361 字节，服务端摘要 `sha256:b751202d5c0c50d202ec29ff140670b0618a2ffa499ecb7339ed72fb9254533d`。
+- 下载后的 IPA 位于 `artifacts/paged-text-selection-09361cab/Aidoku-iOS_nightly-09361ca.ipa`，大小 11,825,905 字节，SHA-256 为 `92ED032BAEDADDFE6FCFF76B6D8D2BF1EBC98251FD74B8AEB4830DB75CEFAE92`；归档包含 `Payload/Aidoku.app/Aidoku`。
+- 工作流只有 `actions/upload-artifact@v4` 的 Node.js 20 弃用兼容警告，不影响本次编译和上传。IPA 未签名，仍需设备侧签名安装；分页点击与选择交互尚未真机验收。
