@@ -2,8 +2,8 @@
 
 - 任务 ID：local-ebook-cover-recovery-20260901
 - 类型：BUG 修复 / 持久数据兼容
-- 状态：聚焦修复已实现并通过静态检查，等待云端编译与真机复验
-- 当前分支：`fix/local-ebook-cover-recovery`
+- 状态：用户暂时验收通过
+- 当前分支：已整合至 `integration/stage-final-reader-fixes`
 
 ## 用户现象与环境
 
@@ -58,6 +58,8 @@ EPUB 首次导入会把内嵌封面写入 `Documents/Local/<书籍>/cover.png`�
 - 恢复结果通过 `CoreDataManager.setCover(..., original: true)` 持久化，并立即返回给当前图片单元格重新加载。
 
 ## 当前验证
+
+- 2026-09-01 用户真机确认本地电子书封面总体恢复正常，暂时验收通过；启动应用时本地电子书封面仍比网络漫画封面加载稍慢，但当前可接受，作为后续性能观察项而非本任务阻塞项。
 
 - `scripts/check-git-ownership.ps1` 通过，仓库所有者为 `AMADEUS\\Lain`。
 - `git diff --check` 通过；修改范围不包含 Reader、History、Chapter 或 Progress 文件。

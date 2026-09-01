@@ -5,7 +5,7 @@
 
 import UIKit
 
-class TextDoublePageViewController: UIViewController {
+class TextDoublePageViewController: UIViewController, PagedTextSelectionPresenting {
     enum Direction {
         case ltr
         case rtl
@@ -24,8 +24,8 @@ class TextDoublePageViewController: UIViewController {
         return sv
     }()
 
-    private lazy var leftTextView: UITextView = createTextView()
-    private lazy var rightTextView: UITextView = createTextView()
+    private lazy var leftTextView: PagedTextContentView = createTextView()
+    private lazy var rightTextView: PagedTextContentView = createTextView()
     private lazy var dividerView: UIView = {
         let v = UIView()
         v.backgroundColor = .separator
@@ -91,13 +91,27 @@ class TextDoublePageViewController: UIViewController {
         rightTextView.textContainerInset = parentReader.textInsetsForDoublePage(isLeftPage: false)
     }
 
-    private func createTextView() -> UITextView {
-        let tv = UITextView()
+    private func createTextView() -> PagedTextContentView {
+        let tv = PagedTextContentView()
         tv.isEditable = false
+        tv.isSelectable = true
         tv.isScrollEnabled = false
         tv.isUserInteractionEnabled = false  // Let taps pass through to parent tap zones
         tv.textContainer.lineFragmentPadding = 0  // Match paginator's layout width
         tv.backgroundColor = parentReader?.textTheme.backgroundColor ?? TextReaderTheme.current.backgroundColor
         return tv
+    }
+
+    func beginTextSelection(at point: CGPoint, onExit: @escaping () -> Void) -> Bool {
+        let target = [leftTextView, rightTextView].first { textView in
+            textView.frame.contains(stackView.convert(point, from: view))
+        }
+        guard let target else { return false }
+        return target.beginSelection(at: target.convert(point, from: view), onExit: onExit)
+    }
+
+    func endTextSelection() {
+        leftTextView.endSelection()
+        rightTextView.endSelection()
     }
 }

@@ -5,13 +5,144 @@
 
 import UIKit
 
-class TextSinglePageViewController: UIViewController {
+@MainActor
+protocol PagedTextSelectionPresenting: AnyObject {
+    func beginTextSelection(at point: CGPoint, onExit: @escaping () -> Void) -> Bool
+    func endTextSelection()
+}
+
+/// A regular UITextView that is deliberately disabled during reading. It becomes
+/// interactive only after the parent reader has already recognized a long press.
+final class PagedTextContentView: UITextView {
+    private lazy var selectionExitTapGesture = UITapGestureRecognizer(
+        target: self,
+        action: #selector(handleSelectionExitTap)
+    )
+    private var onSelectionExit: (() -> Void)?
+
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+        addGestureRecognizer(selectionExitTapGesture)
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        addGestureRecognizer(selectionExitTapGesture)
+    }
+
+    func beginSelection(at point: CGPoint, onExit: @escaping () -> Void) -> Bool {
+        guard bounds.contains(point), attributedText.length > 0 else { return false }
+
+        onSelectionExit = onExit
+        isSelectable = true
+        isUserInteractionEnabled = true
+
+        // While selection is active, a plain tap means "leave selection". Give
+        // that tap precedence over UITextView's private single/double-tap
+        // recognizers. These dependencies are irrelevant in reading mode because
+        // the entire text view is disabled there.
+        gestureRecognizers?
+            .compactMap { $0 as? UITapGestureRecognizer }
+            .filter { $0 !== selectionExitTapGesture }
+            .forEach { $0.require(toFail: selectionExitTapGesture) }
+
+        guard
+            let characterRange = characterRange(at: point),
+            let range = selectionRange(enclosing: characterRange.start)
+        else {
+            endSelection()
+            return false
+        }
+
+        let selectionRect = firstRect(for: range)
+        let hitRect = selectionRect.insetBy(dx: -12, dy: -12)
+        guard
+            !selectionRect.isNull,
+            !selectionRect.isInfinite,
+            hitRect.contains(point)
+        else {
+            endSelection()
+            return false
+        }
+
+        selectedTextRange = range
+        becomeFirstResponder()
+
+        // The first touch was received by the non-interactive reading page, so
+        // UIKit cannot create its menu from that touch itself. Once selection is
+        // established, show the native menu explicitly; handles and range changes
+        // remain managed by UITextView.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isFirstResponder, self.selectedTextRange != nil else { return }
+            self.showEditMenu(anchorRect: selectionRect)
+        }
+        return true
+    }
+
+    func endSelection() {
+        if isFirstResponder {
+            hideEditMenu()
+            resignFirstResponder()
+        }
+        selectedRange = NSRange(location: 0, length: 0)
+        isUserInteractionEnabled = false
+        onSelectionExit = nil
+    }
+
+    private func selectionRange(enclosing position: UITextPosition) -> UITextRange? {
+        if let wordRange = tokenizer.rangeEnclosingPosition(
+            position,
+            with: .word,
+            inDirection: UITextDirection.storage(.forward)
+        ) {
+            return wordRange
+        }
+
+        // Tokenizers can return nil for individual CJK characters or punctuation.
+        return tokenizer.rangeEnclosingPosition(
+            position,
+            with: .character,
+            inDirection: UITextDirection.storage(.forward)
+        )
+    }
+
+    @objc private func handleSelectionExitTap() {
+        onSelectionExit?()
+    }
+
+    private func showEditMenu(anchorRect: CGRect) {
+        if #available(iOS 16.0, *),
+           let interaction = interactions.compactMap({ $0 as? UIEditMenuInteraction }).first {
+            interaction.presentEditMenu(
+                with: UIEditMenuConfiguration(
+                    identifier: nil,
+                    sourcePoint: CGPoint(x: anchorRect.midX, y: anchorRect.midY)
+                )
+            )
+        } else {
+            UIMenuController.shared.showMenu(from: self, rect: anchorRect)
+        }
+    }
+
+    private func hideEditMenu() {
+        if #available(iOS 16.0, *) {
+            interactions
+                .compactMap { $0 as? UIEditMenuInteraction }
+                .forEach { $0.dismissMenu() }
+        } else {
+            UIMenuController.shared.hideMenu()
+        }
+    }
+}
+
+class TextSinglePageViewController: UIViewController, PagedTextSelectionPresenting {
     let page: TextPage
     weak var parentReader: ReaderPagedTextViewController?
 
-    private lazy var textView: UITextView = {
-        let tv = UITextView()
+    private lazy var textView: PagedTextContentView = {
+        let tv = PagedTextContentView()
         tv.isEditable = false
+        tv.isSelectable = true
         tv.isScrollEnabled = false
         tv.isUserInteractionEnabled = false  // Let taps pass through to parent tap zones
         tv.backgroundColor = parentReader?.textTheme.backgroundColor ?? TextReaderTheme.current.backgroundColor
@@ -68,5 +199,13 @@ class TextSinglePageViewController: UIViewController {
         guard let parentReader else { return }
         let insets = parentReader.textInsets
         textView.textContainerInset = insets
+    }
+
+    func beginTextSelection(at point: CGPoint, onExit: @escaping () -> Void) -> Bool {
+        textView.beginSelection(at: textView.convert(point, from: view), onExit: onExit)
+    }
+
+    func endTextSelection() {
+        textView.endSelection()
     }
 }

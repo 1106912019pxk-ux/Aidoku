@@ -96,6 +96,16 @@ class ReaderPagedTextViewController: BaseObservingViewController {
             options: nil
         )
     }()
+    private lazy var textSelectionLongPressGesture: UILongPressGestureRecognizer = {
+        let gesture = UILongPressGestureRecognizer(target: self, action: #selector(handleTextSelectionLongPress(_:)))
+        gesture.minimumPressDuration = 0.45
+        gesture.allowableMovement = 16
+        gesture.delegate = self
+        return gesture
+    }()
+    private var interactionMode = PagedTextInteractionMode.reading
+    private weak var activeSelectionPresenter: PagedTextSelectionPresenting?
+    private var isSpeechNavigationLocked = false
 
     // Chapter navigation
     private var previousChapter: AidokuRunner.Chapter?
@@ -128,6 +138,11 @@ class ReaderPagedTextViewController: BaseObservingViewController {
             pageViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         pageViewController.didMove(toParent: self)
+
+        // This recognizer is independent from the outer single-tap recognizer:
+        // normal taps never wait for it. Text interaction is enabled only after
+        // the long press reaches `.began`.
+        view.addGestureRecognizer(textSelectionLongPressGesture)
 
         configureReadingStatus()
 
@@ -228,6 +243,8 @@ class ReaderPagedTextViewController: BaseObservingViewController {
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
 
+        dismissTextSelection()
+
         coordinator.animate(alongsideTransition: nil) { [weak self] _ in
             guard let self else { return }
 
@@ -240,6 +257,11 @@ class ReaderPagedTextViewController: BaseObservingViewController {
 
             self.repaginate()
         }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        dismissTextSelection()
     }
 
     // Safe area changes from bar toggles are intentionally ignored.
@@ -366,6 +388,8 @@ class ReaderPagedTextViewController: BaseObservingViewController {
     // MARK: - Pagination
 
     private func repaginate() {
+        dismissTextSelection()
+
         guard let text = getCurrentText(), !text.isEmpty else {
             return
         }
@@ -555,6 +579,8 @@ class ReaderPagedTextViewController: BaseObservingViewController {
     // MARK: - Navigation
 
     func move(toPage index: Int, animated: Bool) {
+        dismissTextSelection()
+
         guard !pages.isEmpty else {
             return
         }
@@ -649,6 +675,8 @@ class ReaderPagedTextViewController: BaseObservingViewController {
     }
 
     private func move(direction: UIPageViewController.NavigationDirection) {
+        dismissTextSelection()
+
         guard let currentViewController = pageViewController.viewControllers?.first else { return }
 
         let targetViewController = switch direction {
@@ -740,6 +768,8 @@ extension ReaderPagedTextViewController: ReaderReaderDelegate {
     }
 
     func setChapter(_ chapter: AidokuRunner.Chapter, startPage: Int) {
+
+        dismissTextSelection()
 
         // Prevent reloading if we're already loading
         if isLoadingChapter {
@@ -904,9 +934,61 @@ extension ReaderPagedTextViewController: ReaderSpeechTextProviding {
     }
 
     func setSpeechNavigationLocked(_ locked: Bool) {
+        isSpeechNavigationLocked = locked
+        updatePageScrollingAvailability()
+    }
+
+    private func updatePageScrollingAvailability() {
         pageViewController.view.subviews
             .compactMap { $0 as? UIScrollView }
-            .forEach { $0.isScrollEnabled = !locked }
+            .forEach { scrollView in
+                scrollView.isScrollEnabled = !isSpeechNavigationLocked && interactionMode.allowsPageNavigation
+            }
+    }
+
+    @objc private func handleTextSelectionLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began, interactionMode == .reading else { return }
+        guard
+            let presenter = pageViewController.viewControllers?.first as? PagedTextSelectionPresenting,
+            presenter.beginTextSelection(
+                at: gesture.location(in: pageViewController.viewControllers?.first?.view),
+                onExit: { [weak self] in self?.dismissTextSelection() }
+            )
+        else {
+            return
+        }
+
+        activeSelectionPresenter = presenter
+        interactionMode.beginSelection()
+        updatePageScrollingAvailability()
+    }
+}
+
+extension ReaderPagedTextViewController: ReaderTextSelectionHandling {
+    var isTextSelectionActive: Bool {
+        interactionMode == .selecting
+    }
+
+    @discardableResult
+    func dismissTextSelection() -> Bool {
+        guard interactionMode.endSelection() else { return false }
+        activeSelectionPresenter?.endTextSelection()
+        activeSelectionPresenter = nil
+        updatePageScrollingAvailability()
+        return true
+    }
+}
+
+extension ReaderPagedTextViewController: UIGestureRecognizerDelegate {
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        guard gestureRecognizer === textSelectionLongPressGesture else { return false }
+        // The parent reader can own an OCR long press. It has no text-reader
+        // action, but allowing the two long presses to coexist ensures it cannot
+        // starve paged text selection. Pans and taps remain mutually exclusive.
+        return otherGestureRecognizer is UILongPressGestureRecognizer
     }
 }
 
@@ -951,6 +1033,7 @@ extension ReaderPagedTextViewController: UIPageViewControllerDelegate {
         _ pageViewController: UIPageViewController,
         willTransitionTo pendingViewControllers: [UIViewController]
     ) {
+        dismissTextSelection()
         if UserDefaults.standard.bool(forKey: "Reader.hideBarsOnSwipe") {
             delegate?.hideBars()
         }

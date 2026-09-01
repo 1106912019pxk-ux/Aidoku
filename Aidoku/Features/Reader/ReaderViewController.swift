@@ -1602,6 +1602,14 @@ extension ReaderViewController {
         let singleTapLookupEnabled = isDictionarySingleTapLookupActiveForCurrentChapter
         let singleTapOCRLookupEnabled = singleTapLookupEnabled && !overlayModeEnabled
 
+        // Selection is an explicit temporary mode. Its first outside tap only
+        // exits selection; reading-mode taps continue through the unchanged tap
+        // zone path below and therefore retain immediate page turning.
+        if let textSelectionReader = reader as? ReaderTextSelectionHandling,
+           textSelectionReader.dismissTextSelection() {
+            return
+        }
+
         // dismiss dictionary popup if visible
         if #available(iOS 18.0, *), dictionaryCoordinator.isPopupVisible {
             dictionaryCoordinator.dismissAllPopups()
@@ -1932,6 +1940,14 @@ extension ReaderViewController: UIGestureRecognizerDelegate {
                 || gestureRecognizer === barToggleSecondaryTapGesture
         else {
             return true
+        }
+
+        // A selection-mode tap belongs to the paged text view's exit recognizer.
+        // Prevent the outer tap zone from turning a page after that recognizer
+        // restores reading mode.
+        if let textSelectionReader = reader as? ReaderTextSelectionHandling,
+           textSelectionReader.isTextSelectionActive {
+            return false
         }
 
         var view: UIView? = touch.view
